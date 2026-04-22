@@ -308,3 +308,6 @@ org\.ifaa\.android\.manager.*
 
 # Lineage HALs
 vendor\.lineage\..*
+
+# uwuaosp
+org.uwuaosp.*
