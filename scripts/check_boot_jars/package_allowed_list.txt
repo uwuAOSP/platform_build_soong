@@ -240,3 +240,7 @@ qcom.fmradio
 ###################################################
 # IFAA Manager used for Alipay and/or WeChat payment
 org\.ifaa\.android\.manager.*
+
+# uwuAOSP
+org.uwuaosp.*
+org.uwuniverse.uwuaosp.*
