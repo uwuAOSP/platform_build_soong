@@ -15,12 +15,14 @@
 package build
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,6 +58,14 @@ const (
 	// executed during bootstrap before the primary builder has had a chance to update the path.
 	bootstrapEpoch = 1
 )
+
+func soongAnalysisStatusFile(config Config) string {
+	statusFile := filepath.Join(config.SoongOutDir(), ".analysis_status")
+	if absStatusFile, err := filepath.Abs(statusFile); err == nil {
+		return absStatusFile
+	}
+	return statusFile
+}
 
 var (
 	// Used during parallel update of symlinks in out directory to reflect new
@@ -305,6 +315,8 @@ func bootstrapBlueprint(ctx Context, config Config) {
 	baseArgs := []string{"--soong_variables", config.SoongVarsFile()}
 
 	mainSoongBuildExtraArgs := append(baseArgs, "-o", config.SoongNinjaFile())
+	analysisStatusFile := soongAnalysisStatusFile(config)
+	mainSoongBuildExtraArgs = append(mainSoongBuildExtraArgs, "--status-file", analysisStatusFile)
 	if config.EmptyNinjaFile() {
 		mainSoongBuildExtraArgs = append(mainSoongBuildExtraArgs, "--empty-ninja-file")
 	}
@@ -649,7 +661,10 @@ func runSoong(ctx Context, config Config, enforceNoSoongOutput bool) {
 		defer e.End()
 
 		fifo := filepath.Join(config.OutDir(), ".ninja_fifo")
-		nr := status.NewNinjaReader(ctx, ctx.Status.StartTool(), fifo, ctx.SigNumFunc)
+		bootstrapStatus := newSoongBootstrapStatus(ctx.Status.StartTool(), config.SoongNinjaFile())
+		nr := status.NewNinjaReader(ctx, bootstrapStatus, fifo, ctx.SigNumFunc)
+		stopAnalysisStatus := monitorSoongAnalysisStatus(ctx, soongAnalysisStatusFile(config))
+		defer stopAnalysisStatus()
 		func() {
 			defer nr.Close()
 			var ninjaEnv Environment
@@ -682,6 +697,7 @@ func runSoong(ctx Context, config Config, enforceNoSoongOutput bool) {
 				ninjaCmd = config.SisoBin()
 				ninjaArgs = []string{
 					"--log_dir", sisoLogDir, // for glog, e.g. siso.*INFO*
+					"--stderrthreshold", "3", // Keep Siso diagnostics in log files; action failures use the frontend.
 					"ninja",
 					"-d", "keepdepfile",
 					// TODO: implement these features, or remove them.
@@ -821,6 +837,64 @@ func runSoong(ctx Context, config Config, enforceNoSoongOutput bool) {
 	}
 }
 
+// soongBootstrapStatus replaces the single primary soong_build Ninja edge with
+// the detailed analysis actions reported through monitorSoongAnalysisStatus.
+// Other bootstrap edges, such as rebuilding soong_build itself, remain visible.
+type soongBootstrapStatus struct {
+	status.ToolStatus
+	soongNinjaFile string
+	totalActions   int
+	suppressed     map[*status.Action]bool
+	mutex          sync.Mutex
+}
+
+func newSoongBootstrapStatus(tool status.ToolStatus, soongNinjaFile string) *soongBootstrapStatus {
+	return &soongBootstrapStatus{
+		ToolStatus:     tool,
+		soongNinjaFile: soongNinjaFile,
+		suppressed:     make(map[*status.Action]bool),
+	}
+}
+
+func (s *soongBootstrapStatus) SetTotalActions(total int) {
+	s.mutex.Lock()
+	s.totalActions = total
+	suppressed := len(s.suppressed)
+	s.mutex.Unlock()
+	s.ToolStatus.SetTotalActions(max(0, total-suppressed))
+}
+
+func (s *soongBootstrapStatus) StartAction(action *status.Action) {
+	if slices.Contains(action.Outputs, s.soongNinjaFile) {
+		s.mutex.Lock()
+		s.suppressed[action] = true
+		total := s.totalActions
+		suppressed := len(s.suppressed)
+		s.mutex.Unlock()
+		s.ToolStatus.SetTotalActions(max(0, total-suppressed))
+		return
+	}
+	s.ToolStatus.StartAction(action)
+}
+
+func (s *soongBootstrapStatus) FinishAction(result status.ActionResult) {
+	s.mutex.Lock()
+	suppressed := s.suppressed[result.Action]
+	if suppressed {
+		delete(s.suppressed, result.Action)
+	}
+	s.mutex.Unlock()
+	if !suppressed {
+		s.ToolStatus.FinishAction(result)
+		return
+	}
+	if result.Error != nil {
+		// Restore failed actions so their command output remains visible.
+		s.ToolStatus.StartAction(result.Action)
+		s.ToolStatus.FinishAction(result)
+	}
+}
+
 // checkGlobs manages the globs that cause soong to rerun.
 //
 // When soong_build runs, it will run globs. It will write all the globs
@@ -904,6 +978,146 @@ func checkGlobs(ctx Context, config Config, finalOutFile string) error {
 		}
 	}
 	return nil
+}
+
+func monitorSoongAnalysisStatus(ctx Context, statusFile string) func() {
+	_ = os.Remove(statusFile)
+	tool := ctx.Status.StartTool()
+	tool.SetTotalActions(11)
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var currentAction *status.Action
+	processedBytes := 0
+	bucketTotal := 0
+	bucketActions := make(map[int]*status.Action)
+	startAction := func(message string) {
+		if currentAction != nil {
+			tool.FinishAction(status.ActionResult{Action: currentAction})
+		}
+		currentAction = &status.Action{
+			Description: message,
+			Outputs:     []string{statusFile},
+		}
+		tool.StartAction(currentAction)
+	}
+	processLine := func(line string) {
+		fields := strings.Split(line, "\t")
+		if len(fields) == 2 && fields[0] == "stage" {
+			if fields[1] == "Writing module Ninja buckets..." {
+				return
+			}
+			if currentAction != nil {
+				tool.FinishAction(status.ActionResult{Action: currentAction})
+				currentAction = nil
+			}
+			for bucket, action := range bucketActions {
+				tool.FinishAction(status.ActionResult{Action: action})
+				delete(bucketActions, bucket)
+			}
+			if fields[1] != "Android.bp analysis complete" {
+				startAction(fields[1])
+			}
+			return
+		}
+		if len(fields) != 4 || fields[0] != "progress" {
+			return
+		}
+		value, valueErr := strconv.Atoi(fields[2])
+		total, totalErr := strconv.Atoi(fields[3])
+		if valueErr != nil || totalErr != nil || value < 0 || total < 0 {
+			return
+		}
+		switch fields[1] {
+		case "ninja_buckets":
+			if value != 0 {
+				return
+			}
+			bucketTotal = total
+			if currentAction != nil {
+				tool.FinishAction(status.ActionResult{Action: currentAction})
+				currentAction = nil
+			}
+			if total == 0 {
+				tool.SetTotalActions(11)
+				startAction("No module Ninja buckets need updating")
+			} else {
+				// Replace the generic bucket-writing stage with one action for
+				// every dirty bucket. Up to eight run concurrently.
+				tool.SetTotalActions(10 + total)
+			}
+		case "ninja_bucket_start":
+			if total != bucketTotal || total == 0 || value == 0 || value > total {
+				return
+			}
+			if _, exists := bucketActions[value]; exists {
+				return
+			}
+			action := &status.Action{
+				Description: fmt.Sprintf("Writing module Ninja bucket %d/%d...", value, total),
+				Outputs:     []string{statusFile},
+			}
+			bucketActions[value] = action
+			tool.StartAction(action)
+		case "ninja_bucket_finish":
+			if total != bucketTotal {
+				return
+			}
+			if action, exists := bucketActions[value]; exists {
+				tool.FinishAction(status.ActionResult{Action: action})
+				delete(bucketActions, value)
+			}
+		}
+	}
+	readStatus := func() {
+		data, err := os.ReadFile(statusFile)
+		if err != nil {
+			return
+		}
+		if processedBytes >= len(data) {
+			return
+		}
+		newData := data[processedBytes:]
+		lastNewline := bytes.LastIndexByte(newData, '\n')
+		if lastNewline < 0 {
+			return
+		}
+		for _, line := range strings.Split(string(newData[:lastNewline]), "\n") {
+			if line != "" {
+				processLine(line)
+			}
+		}
+		processedBytes += lastNewline + 1
+	}
+
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				readStatus()
+			case <-done:
+				readStatus()
+				return
+			}
+		}
+	}()
+
+	return func() {
+		close(done)
+		wg.Wait()
+		if currentAction != nil {
+			tool.FinishAction(status.ActionResult{Action: currentAction})
+		}
+		for _, action := range bucketActions {
+			tool.FinishAction(status.ActionResult{Action: action})
+		}
+		tool.Finish()
+		_ = os.Remove(statusFile)
+	}
 }
 
 // loadSoongBuildMetrics reads out/soong_build_metrics.pb if it was generated by soong_build and copies the

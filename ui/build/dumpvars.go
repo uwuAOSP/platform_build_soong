@@ -404,8 +404,8 @@ func runMakeProductConfig(ctx Context, config Config) {
 
 	ctx.Metrics.SetSoongOnly(config.soongOnlyRequested)
 
-	// Enable incremental analysis by default if requested by the build flag, unless it
-	// was set explicitly in the environment.
+	// Preserve the release-product opt-in for callers that explicitly disable the
+	// default in their configuration.
 	if !config.incrementalBuildActionsSetInEnv && makeVars["RELEASE_SOONG_INCREMENTAL_ANALYSIS"] == "true" {
 		config.incrementalBuildActions = true
 	}

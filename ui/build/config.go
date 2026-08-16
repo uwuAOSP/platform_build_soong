@@ -356,10 +356,11 @@ func newConfig(ctx Context, isDumpVar bool, args ...string) Config {
 		}
 	}
 
-	if ret.environ.IsEnvTrue("SOONG_INCREMENTAL_ANALYSIS") {
-		ret.incrementalBuildActions = true
-		ret.incrementalBuildActionsSetInEnv = true
-	} else if ret.environ.IsFalse("SOONG_INCREMENTAL_ANALYSIS") {
+	// Incremental build actions are supported in both Soong-only and
+	// Soong+Make builds. Keep the environment variable as an explicit opt-out,
+	// but do not require it to be set for the optimization to be active.
+	ret.incrementalBuildActions = true
+	if ret.environ.IsFalse("SOONG_INCREMENTAL_ANALYSIS") {
 		ret.incrementalBuildActions = false
 		ret.incrementalBuildActionsSetInEnv = true
 	}

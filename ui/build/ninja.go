@@ -81,6 +81,7 @@ func runNinja(ctx Context, config Config, ninjaArgs []string) {
 		executable = config.SisoBin()
 		args = []string{
 			"--log_dir", config.LogsDir(), // for glog, e.g. siso.*INFO*
+			"--stderrthreshold", "3", // Keep Siso diagnostics in log files; action failures use the frontend.
 			"ninja",
 			// TODO: implement these features, or remove them.
 			//"-d", "trace",
