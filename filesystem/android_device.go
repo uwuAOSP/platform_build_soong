@@ -131,6 +131,9 @@ type DeviceProperties struct {
 	// Name of the radio partition
 	Radio_partition_name *string
 
+	// Names of the per-file prebuilt radio partitions.
+	Radio_partition_names []string
+
 	Pvmfw PvmfwProperties
 
 	Vendor_blobs_license *string `android:"path"`
@@ -329,6 +332,9 @@ func (a *androidDevice) DepsMutator(ctx android.BottomUpMutatorContext) {
 	}
 	if a.deviceProps.Radio_partition_name != nil {
 		ctx.AddDependency(ctx.Module(), radioDepTag, *a.deviceProps.Radio_partition_name)
+	}
+	for _, name := range a.deviceProps.Radio_partition_names {
+		ctx.AddDependency(ctx.Module(), radioDepTag, name)
 	}
 	if a.deviceProps.Android_info != nil {
 		ctx.AddDependency(ctx.Module(), androidInfoDepTag, *a.deviceProps.Android_info)
@@ -804,6 +810,14 @@ func (a *androidDevice) distFiles(ctx android.ModuleContext) {
 				ctx.DistForGoal("droidcore-unbundled", file)
 			}
 		}
+		for _, name := range a.deviceProps.Radio_partition_names {
+			radio := ctx.GetDirectDepProxyWithTag(name, radioDepTag)
+			files := android.OutputFilesForModule(ctx, radio, "")
+			for _, file := range files {
+				// The radio files are disted stanadlone, outside img.zip
+				ctx.DistForGoal("droidcore-unbundled", file)
+			}
+		}
 		// bootloader
 		if a.deviceProps.Bootloader != nil {
 			bootloader := ctx.GetDirectDepProxyWithTag(*a.deviceProps.Bootloader, bootloaderDepTag)
@@ -1048,6 +1062,13 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 	}
 	if a.deviceProps.Radio_partition_name != nil {
 		radio := ctx.GetDirectDepProxyWithTag(*a.deviceProps.Radio_partition_name, radioDepTag)
+		files := android.OutputFilesForModule(ctx, radio, "")
+		builder.Command().
+			Textf("mkdir -p %s/RADIO && cp -t %s/RADIO ", targetFilesDir, targetFilesDir).
+			Inputs(files)
+	}
+	for _, name := range a.deviceProps.Radio_partition_names {
+		radio := ctx.GetDirectDepProxyWithTag(name, radioDepTag)
 		files := android.OutputFilesForModule(ctx, radio, "")
 		builder.Command().
 			Textf("mkdir -p %s/RADIO && cp -t %s/RADIO ", targetFilesDir, targetFilesDir).

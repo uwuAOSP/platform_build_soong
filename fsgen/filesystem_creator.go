@@ -130,17 +130,18 @@ type filesystemCreatorProps struct {
 	Vbmeta_module_names    []string `blueprint:"mutated"`
 	Vbmeta_partition_names []string `blueprint:"mutated"`
 
-	Boot_image                     string `blueprint:"mutated" android:"path_device_first"`
-	Boot_16k_image                 string `blueprint:"mutated" android:"path_device_first"`
-	Vendor_boot_image              string `blueprint:"mutated" android:"path_device_first"`
-	Vendor_boot_debug_image        string `blueprint:"mutated" android:"path_device_first"`
-	Vendor_boot_test_harness_image string `blueprint:"mutated" android:"path_device_first"`
-	Vendor_kernel_boot_image       string `blueprint:"mutated" android:"path_device_first"`
-	Init_boot_image                string `blueprint:"mutated" android:"path_device_first"`
-	Super_image                    string `blueprint:"mutated" android:"path_device_first"`
-	Radio_image                    string `blueprint:"mutated" android:"path_device_first"`
-	Bootloader                     string `blueprint:"mutated" android:"path_device_first"`
-	Tzsw                           string `blueprint:"mutated" android:"path_device_first"`
+	Boot_image                     string   `blueprint:"mutated" android:"path_device_first"`
+	Boot_16k_image                 string   `blueprint:"mutated" android:"path_device_first"`
+	Vendor_boot_image              string   `blueprint:"mutated" android:"path_device_first"`
+	Vendor_boot_debug_image        string   `blueprint:"mutated" android:"path_device_first"`
+	Vendor_boot_test_harness_image string   `blueprint:"mutated" android:"path_device_first"`
+	Vendor_kernel_boot_image       string   `blueprint:"mutated" android:"path_device_first"`
+	Init_boot_image                string   `blueprint:"mutated" android:"path_device_first"`
+	Super_image                    string   `blueprint:"mutated" android:"path_device_first"`
+	Radio_image                    string   `blueprint:"mutated" android:"path_device_first"`
+	Radio_partition_names          []string `blueprint:"mutated"`
+	Bootloader                     string   `blueprint:"mutated" android:"path_device_first"`
+	Tzsw                           string   `blueprint:"mutated" android:"path_device_first"`
 }
 
 type filesystemCreator struct {
@@ -395,6 +396,8 @@ func (f *filesystemCreator) createInternalModules(ctx android.LoadHookContext) {
 
 	if radioImgModuleName := createRadioImg(ctx); radioImgModuleName != "" {
 		f.properties.Radio_image = radioImgModuleName
+	} else if radioPartitionNames := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.AbOtaRadioPartitions; len(radioPartitionNames) > 0 {
+		f.properties.Radio_partition_names = radioPartitionNames
 	}
 	if bootloader, ok := f.createBootloader(ctx); ok {
 		f.properties.Bootloader = bootloader
@@ -711,6 +714,9 @@ func (f *filesystemCreator) createDeviceModule(
 
 	if f.properties.Radio_image != "" {
 		deviceProps.Radio_partition_name = &f.properties.Radio_image
+	}
+	if len(f.properties.Radio_partition_names) > 0 {
+		deviceProps.Radio_partition_names = f.properties.Radio_partition_names
 	}
 
 	if ctx.Config().SoongDefinedSystemImage() != "" {

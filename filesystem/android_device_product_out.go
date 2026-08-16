@@ -217,6 +217,19 @@ func (a *androidDevice) copyFilesToProductOutForSoongOnly(ctx android.ModuleCont
 			deps = append(deps, installPath)
 		}
 	}
+	for _, name := range a.deviceProps.Radio_partition_names {
+		radio := ctx.GetDirectDepProxyWithTag(name, radioDepTag)
+		files := android.OutputFilesForModule(ctx, radio, "")
+		for _, file := range files {
+			installPath := android.PathForModuleInPartitionInstall(ctx, "", file.Base())
+			ctx.Build(pctx, android.BuildParams{
+				Rule:   android.CpRule,
+				Input:  file,
+				Output: installPath,
+			})
+			deps = append(deps, installPath)
+		}
+	}
 
 	// dtbo
 	for _, dtbo := range []*string{a.deviceProps.Dtbo_image, a.deviceProps.Dtbo_image_16k} {
