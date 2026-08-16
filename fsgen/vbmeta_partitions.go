@@ -247,7 +247,7 @@ func (f *filesystemCreator) createVbmetaPartitions(ctx android.LoadHookContext, 
 	if len(f.properties.Bootloader) > 0 {
 		allGeneratedPartitionTypes = append(allGeneratedPartitionTypes, "bootloader")
 	}
-	if partitionVars.BoardPrebuiltDtboImage != "" {
+	if getDtboModuleName(ctx) != "" {
 		allGeneratedPartitionTypes = append(allGeneratedPartitionTypes, "dtbo")
 	}
 

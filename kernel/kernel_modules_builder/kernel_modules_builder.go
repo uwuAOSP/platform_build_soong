@@ -201,25 +201,37 @@ func createLoadFile(props *common.PrebuiltKernelModulesPropertiesJSON, loadFile 
 		dir := filepath.Join(outDir, "unzipped_modules")
 		must(os.MkdirAll(dir, 0o777))
 
-		// Extract the loaded kofiles to a directory
-		lines := slices.Concat(props.Zip.Extra_loads, strings.Split(string(lf), "\n"))
-		koFiles := make([]string, 0, len(lines)+len(props.Srcs))
-		koNames := make([]string, 0, len(lines))
+		loadLines := slices.Concat(props.Zip.Extra_loads, strings.Split(string(lf), "\n"))
+		installLines := loadLines
+		if props.Zip.Install_file != nil {
+			installLines = slices.Concat(strings.Split(string(readZipFile(reader, *props.Zip.Install_file)), "\n"), loadLines)
+		}
+		koFiles := make([]string, 0, len(installLines)+len(props.Srcs))
+		koNames := make([]string, 0, len(loadLines))
 		seen := make(map[string]struct{})
-		for _, line := range lines {
+		for _, line := range loadLines {
+			if len(line) == 0 {
+				continue
+			}
+			koFile := filepath.Base(line)
+			if slices.Contains(koNames, koFile) {
+				fmt.Fprintf(os.Stderr, "Duplicate module in load file: %q\n", koFile)
+				os.Exit(1)
+			}
+			koNames = append(koNames, koFile)
+		}
+		for _, line := range installLines {
 			if len(line) == 0 {
 				continue
 			}
 			koFile := filepath.Base(line)
 			if _, ok := seen[koFile]; ok {
-				fmt.Fprintf(os.Stderr, "Duplicate ko file: %q\n", koFile)
-				os.Exit(1)
+				continue
 			}
 			seen[koFile] = struct{}{}
 			extractedLocation := filepath.Join(dir, koFile)
 			extractZipFile(reader, koFile, extractedLocation)
 			koFiles = append(koFiles, extractedLocation)
-			koNames = append(koNames, koFile)
 		}
 
 		must(os.WriteFile(loadFile, []byte(strings.Join(koNames, "\n")), 0o777))

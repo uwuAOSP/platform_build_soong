@@ -102,6 +102,10 @@ type PrebuiltKernelModulesProperties struct {
 		// List of extra kernel modules to add to the load file.
 		Extra_loads []string
 
+		// The name of a file inside the zip listing all modules to install.
+		// This may be a superset of Load_file.
+		Install_file *string
+
 		// The name of the blocklist file inside of the zip file.
 		Blocklist_file *string
 
@@ -155,6 +159,7 @@ func (p *PrebuiltKernelModulesProperties) resolve(ctx android.ModuleContext, com
 			Src:               zip,
 			Load_file:         p.Zip.Load_file,
 			Extra_loads:       p.Zip.Extra_loads,
+			Install_file:      p.Zip.Install_file,
 			Blocklist_file:    p.Zip.Blocklist_file,
 			Srcs_16k_cfg_file: p.Zip.Srcs_16k_cfg_file,
 		},

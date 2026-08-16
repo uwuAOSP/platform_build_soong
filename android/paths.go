@@ -631,6 +631,15 @@ type DirectoryPath interface {
 	base() basePath
 }
 
+// DirectoryPathForSource returns a source-root-relative directory path.
+func DirectoryPathForSource(ctx PathContext, pathComponents ...string) DirectoryPath {
+	path, err := pathForSource(ctx, pathComponents...)
+	if err != nil {
+		reportPathError(ctx, err)
+	}
+	return &directoryPath{basePath{path: path.path, rel: path.rel}}
+}
+
 var _ DirectoryPath = (*directoryPath)(nil)
 
 // @auto-generate: gob

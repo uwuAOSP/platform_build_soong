@@ -527,6 +527,16 @@ func getPrebuiltKernelPath(ctx android.LoadHookContext) string {
 	return ""
 }
 
+func soongKernelModule(ctx android.LoadHookContext) string {
+	module := ctx.Config().VendorConfig("uwuVarsPlugin").String("SOONG_KERNEL_MODULE")
+	if strings.HasPrefix(module, "//") {
+		if separator := strings.LastIndexByte(module, ':'); separator >= 0 {
+			return module[separator:]
+		}
+	}
+	return module
+}
+
 func getstageDeviceFileProps(ctx android.LoadHookContext) []filesystem.StageDeviceFilePairProp {
 	stageDeviceFileProps := []filesystem.StageDeviceFilePairProp{}
 	processedProductCopyFilesMap := uniqueExistingProductCopyFileMap(ctx)

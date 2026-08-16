@@ -63,6 +63,10 @@ type ZipProperties struct {
 	// List of extra kernel modules to add to the load file.
 	Extra_loads []string `json:",omitempty"`
 
+	// Optional file in the zip listing all modules to install. When omitted,
+	// the load file remains the install list for backwards compatibility.
+	Install_file *string `json:",omitempty"`
+
 	// The name of the blocklist file inside of the zip file.
 	Blocklist_file *string `json:",omitempty"`
 

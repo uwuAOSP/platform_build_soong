@@ -167,6 +167,10 @@ func (p *analysisProgress) eventStarted(event string) {
 		p.report("Writing global Ninja rules...")
 	case "cache_build_actions":
 		p.report("Saving incremental analysis cache...")
+	case "cache_module_build_actions":
+		p.report("Caching module build actions...")
+	case "cache_ninja_statements":
+		p.report("Flushing module Ninja statement cache...")
 	}
 }
 

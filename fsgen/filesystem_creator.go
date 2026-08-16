@@ -297,7 +297,7 @@ func (f *filesystemCreator) createInternalModules(ctx android.LoadHookContext) {
 	partitionVars := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse
 	dtbImg := createDtbImgFilegroup(ctx)
 
-	if buildingBootImage(partitionVars) {
+	if buildingBootImage(ctx, partitionVars) {
 		if createBootImage(ctx, dtbImg) {
 			f.properties.Boot_image = ":" + generatedModuleNameForPartition(ctx.Config(), "boot")
 		} else {

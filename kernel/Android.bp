@@ -19,6 +19,12 @@ package {
 bootstrap_go_package {
     name: "soong-kernel",
     pkgPath: "android/soong/kernel",
+    visibility: [
+        "//build/soong/apex",
+        "//build/soong/filesystem",
+        "//build/soong/fsgen",
+        "//vendor:__subpackages__",
+    ],
     deps: [
         "blueprint",
         "blueprint-proptools",
