@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"android/soong/android"
@@ -46,6 +47,7 @@ var (
 
 	delveListen string
 	delvePath   string
+	statusFile  string
 
 	cmdlineArgs android.CmdArgs
 )
@@ -56,6 +58,8 @@ type ConfigCache struct {
 	EnvDepsHash                  proptools.Hash
 	ProductVariableFileTimestamp int64
 	SoongBuildFileTimestamp      int64
+	KatiEnabled                  bool
+	KatiSuffix                   string
 }
 
 func init() {
@@ -66,6 +70,7 @@ func init() {
 	flag.StringVar(&usedEnvFile, "used_env", "", "File containing used environment variables")
 	flag.StringVar(&cmdlineArgs.OutDir, "out", "", "the ninja builddir directory")
 	flag.StringVar(&cmdlineArgs.ModuleListFile, "l", "", "file that lists filepaths to parse")
+	flag.StringVar(&statusFile, "status-file", "", "file used to report analysis progress")
 	flag.StringVar(&cmdlineArgs.KatiSuffix, "kati_suffix", "", "the suffix for kati and ninja files, so that different configurations don't clobber each other")
 	flag.BoolVar(&cmdlineArgs.KatiEnabled, "kati_enabled", false, "If the main kati build phase is enabled. False for soong-only builds")
 
@@ -98,6 +103,88 @@ func init() {
 	// write out text protos in command lines, and command line changes trigger
 	// rebuilds).
 	androidProtobuf.DisableRand()
+}
+
+type analysisProgress struct {
+	file         string
+	blueprintCnt int
+	mutex        sync.Mutex
+	lastStage    string
+}
+
+func newAnalysisProgress(file, moduleListFile string) *analysisProgress {
+	p := &analysisProgress{file: file}
+	if data, err := os.ReadFile(shared.JoinPath(topDir, moduleListFile)); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			if line != "" {
+				p.blueprintCnt++
+			}
+		}
+	}
+	return p
+}
+
+func (p *analysisProgress) report(message string) {
+	if p.file == "" {
+		return
+	}
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if message == p.lastStage {
+		return
+	}
+	p.lastStage = message
+	if err := os.MkdirAll(filepath.Dir(p.file), 0777); err != nil {
+		return
+	}
+	f, err := os.OpenFile(p.file, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(f, "stage\t%s\n", message)
+	_ = f.Close()
+}
+
+func (p *analysisProgress) eventStarted(event string) {
+	switch event {
+	case "list_modules":
+		p.report("Loading Android.bp file list...")
+	case "parse_bp":
+		p.report(fmt.Sprintf("Parsing %d Android.bp files...", p.blueprintCnt))
+	case "resolve_deps":
+		p.report("Resolving module dependencies and variants...")
+	case "restore_build_actions":
+		p.report("Restoring incremental analysis cache...")
+	case "prepare_build_actions":
+		p.report("Preparing build actions...")
+	case "generateModuleBuildActions":
+		p.report("Generating module build rules...")
+	case "generateParallelSingletonBuildActions", "generateSingletonBuildActions":
+		p.report("Generating global build rules...")
+	case "modules":
+		p.report("Writing module Ninja buckets...")
+	case "singletons":
+		p.report("Writing global Ninja rules...")
+	case "cache_build_actions":
+		p.report("Saving incremental analysis cache...")
+	}
+}
+
+func (p *analysisProgress) eventProgress(event string, completed, total int) {
+	if p.file == "" {
+		return
+	}
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if err := os.MkdirAll(filepath.Dir(p.file), 0777); err != nil {
+		return
+	}
+	f, err := os.OpenFile(p.file, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(f, "progress\t%s\t%d\t%d\n", event, completed, total)
+	_ = f.Close()
 }
 
 func newNameResolver(config android.Config) *android.NameResolver {
@@ -213,6 +300,8 @@ func incrementalValid(config android.Config, configCacheFile string) (*ConfigCac
 	newConfigCache.EnvDepsHash, err = proptools.CalculateHashReflection(data)
 	newConfigCache.ProductVariableFileTimestamp = getFileTimestamp(filepath.Join(topDir, cmdlineArgs.SoongVariables))
 	newConfigCache.SoongBuildFileTimestamp = getFileTimestamp(filepath.Join(topDir, config.HostToolDir(), "soong_build"))
+	newConfigCache.KatiEnabled = cmdlineArgs.KatiEnabled
+	newConfigCache.KatiSuffix = cmdlineArgs.KatiSuffix
 	//TODO(b/344917959): out/soong/dexpreopt.config might need to be checked as well.
 
 	file, err := os.Open(configCacheFile)
@@ -345,13 +434,17 @@ func main() {
 	metricsDir := availableEnv["LOG_DIR"]
 
 	ctx := newContext(configuration)
+	progress := newAnalysisProgress(statusFile, cmdlineArgs.ModuleListFile)
+	ctx.SetEventStartedHook(progress.eventStarted)
+	ctx.SetEventProgressHook(progress.eventProgress)
+	progress.report("Initializing Android.bp analysis...")
 	android.StartBackgroundMetrics(configuration)
 
 	var configCache *ConfigCache
 	configFile := filepath.Join(topDir, ctx.Config().OutDir(), configCacheFile)
 	incremental := false
-	// Tie incremental analysis to soong-only for now.
-	ctx.SetIncrementalEnabled(cmdlineArgs.IncrementalBuildActions && !cmdlineArgs.KatiEnabled)
+	// Incremental analysis is valid for both Soong-only and Soong+Make builds.
+	ctx.SetIncrementalEnabled(cmdlineArgs.IncrementalBuildActions)
 	if ctx.GetIncrementalEnabled() {
 		configCache, incremental = incrementalValid(ctx.Config(), configFile)
 		ctx.SetIncrementalProviderTest(incremental && cmdlineArgs.IncrementalProviderTest)
@@ -406,6 +499,7 @@ func main() {
 	// are ninja inputs to the main output file, then ninja would superfluously
 	// rebuild this output file on the next build invocation.
 	touch(shared.JoinPath(topDir, finalOutputFile))
+	progress.report("Android.bp analysis complete")
 }
 
 func writeUsedEnvironmentFile(configuration android.Config) {
