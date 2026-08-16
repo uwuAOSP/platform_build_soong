@@ -129,6 +129,13 @@ func deleteStaleMetrics(metricsFilePathSlice []string) error {
 // execution is specified. The args are specific to the command.
 func main() {
 	shared.ReexecWithDelveMaybe(os.Getenv("SOONG_UI_DELVE"), shared.ResolveDelveBinary())
+	if _, configured := os.LookupEnv("UWU_COLOR_OUTPUT"); !configured {
+		colorOutput := "never"
+		if _, noColor := os.LookupEnv("NO_COLOR"); !noColor && terminal.IsSmartTerminal(os.Stdout) {
+			colorOutput = "always"
+		}
+		os.Setenv("UWU_COLOR_OUTPUT", colorOutput)
+	}
 
 	buildStarted := time.Now()
 

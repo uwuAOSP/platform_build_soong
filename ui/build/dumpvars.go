@@ -185,6 +185,8 @@ var BannerVars = []string{
 	"UWU_VERSION",
 	"PRODUCT_SOURCE_ROOT_DIRS",
 	"TARGET_PRODUCT",
+	"TARGET_RELEASE",
+	"TARGET_DEVICE",
 	"TARGET_BUILD_VARIANT",
 	"TARGET_BUILD_APPS",
 	"TARGET_BUILD_UNBUNDLED",
@@ -203,50 +205,188 @@ var BannerVars = []string{
 	"PRODUCT_SOONG_NAMESPACES",
 }
 
-func Banner(config Config, make_vars map[string]string) string {
-	b := &bytes.Buffer{}
+type bannerField struct {
+	label string
+	value string
+}
 
-	fmt.Fprintln(b, "============================================")
-	for _, name := range BannerVars {
-		if make_vars[name] != "" {
-			fmt.Fprintf(b, "%s=%s\n", name, make_vars[name])
+type bannerState struct {
+	soongOnly       bool
+	incremental     bool
+	partialCompile  string
+	partialAnalysis string
+	ninja           string
+	useRBE          bool
+	useRewrapper    string
+}
+
+type bannerStyle struct {
+	reset  string
+	bold   string
+	dim    string
+	blue   string
+	cyan   string
+	green  string
+	accent string
+	brand  []string
+}
+
+func newBannerStyle(color, trueColor bool) bannerStyle {
+	if !color {
+		return bannerStyle{}
+	}
+	style := bannerStyle{
+		reset:  "\033[0m",
+		bold:   "\033[1m",
+		dim:    "\033[2m",
+		blue:   "\033[34m",
+		cyan:   "\033[36m",
+		green:  "\033[32m",
+		accent: "\033[36m",
+	}
+	if trueColor {
+		style.brand = []string{
+			"\033[38;2;141;227;253m",
+			"\033[38;2;146;216;252m",
+			"\033[38;2;151;206;251m",
+			"\033[38;2;155;195;251m",
+			"\033[38;2;166;203;252m",
+			"\033[38;2;177;211;252m",
+			"\033[38;2;188;219;253m",
+		}
+		style.accent = "\033[38;2;155;195;251m"
+	}
+	return style
+}
+
+func bannerBrand(style bannerStyle) string {
+	const brand = "uwuAOSP"
+	if len(style.brand) == len(brand) {
+		var b strings.Builder
+		for i, char := range brand {
+			fmt.Fprintf(&b, "%s%s%c", style.brand[i], style.bold, char)
+		}
+		return b.String()
+	}
+	return style.cyan + style.bold + brand
+}
+
+func bannerArchitecture(makeVars map[string]string) string {
+	primary := makeVars["TARGET_ARCH"]
+	if variant := makeVars["TARGET_ARCH_VARIANT"]; primary != "" && variant != "" {
+		primary += " (" + variant + ")"
+	}
+	secondary := makeVars["TARGET_2ND_ARCH"]
+	if variant := makeVars["TARGET_2ND_ARCH_VARIANT"]; secondary != "" && variant != "" {
+		secondary += " (" + variant + ")"
+	}
+	if primary != "" && secondary != "" {
+		return primary + " / " + secondary
+	}
+	return primary + secondary
+}
+
+func writeBannerSection(b *bytes.Buffer, style bannerStyle, title string, fields []bannerField) {
+	nonempty := make([]bannerField, 0, len(fields))
+	for _, field := range fields {
+		if field.value != "" {
+			nonempty = append(nonempty, field)
 		}
 	}
+	if len(nonempty) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n%s%s\n", style.bold, title)
+	fmt.Fprintf(b, "%s%s%s\n", style.dim, strings.Repeat("-", len(title)), style.reset)
+	for _, field := range nonempty {
+		valueStyle := style.bold
+		switch field.value {
+		case "true":
+			valueStyle = style.green + style.bold
+		case "false":
+			valueStyle = style.dim
+		}
+		fmt.Fprintf(b, "  %s%-17s%s %s%s%s\n", style.accent, field.label,
+			style.reset, valueStyle, field.value, style.reset)
+	}
+}
 
+func renderBanner(makeVars map[string]string, state bannerState, color, trueColor bool) string {
+	b := &bytes.Buffer{}
+	style := newBannerStyle(color, trueColor)
+	fmt.Fprintf(b, "  %s%s\n", bannerBrand(style), style.reset)
+
+	writeBannerSection(b, style, "Target", []bannerField{
+		{"Product", makeVars["TARGET_PRODUCT"]},
+		{"Release", makeVars["TARGET_RELEASE"]},
+		{"Variant", makeVars["TARGET_BUILD_VARIANT"]},
+		{"Device", makeVars["TARGET_DEVICE"]},
+		{"Architecture", bannerArchitecture(makeVars)},
+	})
+	androidVersion := makeVars["PLATFORM_VERSION"]
+	if codename := makeVars["PLATFORM_VERSION_CODENAME"]; codename != "" && codename != "REL" {
+		androidVersion += " (" + codename + ")"
+	}
+	writeBannerSection(b, style, "Platform", []bannerField{
+		{"uwuAOSP", makeVars["UWU_VERSION"]},
+		{"Android", androidVersion},
+		{"Build ID", makeVars["BUILD_ID"]},
+	})
+	writeBannerSection(b, style, "Build", []bannerField{
+		{"Output", makeVars["OUT_DIR"]},
+		{"Soong only", strconv.FormatBool(state.soongOnly)},
+		{"Incremental", strconv.FormatBool(state.incremental)},
+		{"Partial compile", state.partialCompile},
+		{"Partial analysis", state.partialAnalysis},
+		{"Ninja backend", state.ninja},
+		{"Remote build", strconv.FormatBool(state.useRBE)},
+		{"Rewrapper", state.useRewrapper},
+	})
+	writeBannerSection(b, style, "Host", []bannerField{
+		{"OS", makeVars["HOST_OS_EXTRA"]},
+	})
+	fmt.Fprintf(b, "\n%s%s==>%s %sBuild environment ready%s", style.green, style.bold,
+		style.reset, style.bold, style.reset)
+	return b.String()
+}
+
+func Banner(config Config, make_vars map[string]string) string {
+	state := bannerState{}
 	if use, _ := config.environ.Get("SOONG_USE_PARTIAL_COMPILE"); use == "true" {
 		if partialCompile, ok := config.environ.Get("SOONG_PARTIAL_COMPILE"); ok {
-			fmt.Fprintf(b, "SOONG_PARTIAL_COMPILE=%s\n", partialCompile)
+			state.partialCompile = partialCompile
 		}
 	}
-
-	// Only show USE_RBE and USE_REWRAPPER when the user has explicitly set SOONG_NINJA
 	if config.ninjaCommand != NINJA_DEFAULT {
-		fmt.Fprintf(b, "SOONG_NINJA=%s\n", config.ninjaCommand.String())
+		state.ninja = config.ninjaCommand.String()
 	}
 	if config.UseRBE() {
-		fmt.Fprintf(b, "USE_RBE=%t\n", config.UseRBE())
+		state.useRBE = true
 		if config.ninjaCommand == NINJA_SISO {
-			fmt.Fprintf(b, "USE_REWRAPPER=%t\n", config.UseRewrapper())
+			state.useRewrapper = strconv.FormatBool(config.UseRewrapper())
 		}
 	}
-
-	// Normally config.soongOnlyRequested already takes into account PRODUCT_SOONG_ONLY,
-	// except when doing `get_build_var report_config`, which is run during envsetup.
 	if config.skipKatiControlledByFlags {
-		fmt.Fprintf(b, "SOONG_ONLY=%t\n", config.soongOnlyRequested)
+		state.soongOnly = config.soongOnlyRequested
 	} else { // default for this product
-		fmt.Fprintf(b, "SOONG_ONLY=%t\n", make_vars["PRODUCT_SOONG_ONLY"] == "true")
+		state.soongOnly = make_vars["PRODUCT_SOONG_ONLY"] == "true"
 	}
-
-	fmt.Fprintf(b, "SOONG_INCREMENTAL_ANALYSIS=%t\n", config.incrementalBuildActions)
-
+	state.incremental = config.incrementalBuildActions
 	if len(config.partialAnalysisTargets) > 0 {
-		fmt.Fprintf(b, "SOONG_PARTIAL_ANALYSIS=%s\n", config.partialAnalysisTargets)
+		state.partialAnalysis = config.partialAnalysisTargets
 	}
-
-	fmt.Fprint(b, "============================================")
-
-	return b.String()
+	if make_vars["TARGET_RELEASE"] == "" {
+		if release, ok := config.environ.Get("TARGET_RELEASE"); ok {
+			make_vars["TARGET_RELEASE"] = release
+		}
+	}
+	colorSetting, _ := config.environ.Get("UWU_COLOR_OUTPUT")
+	_, noColor := config.environ.Get("NO_COLOR")
+	color := colorSetting == "always" && !noColor
+	colorTerm, _ := config.environ.Get("COLORTERM")
+	term, _ := config.environ.Get("TERM")
+	trueColor := color && (colorTerm == "truecolor" || colorTerm == "24bit" || strings.Contains(term, "direct"))
+	return renderBanner(make_vars, state, color, trueColor)
 }
 
 func runMakeProductConfig(ctx Context, config Config) {

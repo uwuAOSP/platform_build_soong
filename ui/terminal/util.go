@@ -38,6 +38,11 @@ func isSmartTerminal(w io.Writer) bool {
 	return false
 }
 
+// IsSmartTerminal reports whether w supports interactive terminal formatting.
+func IsSmartTerminal(w io.Writer) bool {
+	return isSmartTerminal(w)
+}
+
 func termSize(w io.Writer) (width int, height int, ok bool) {
 	if f, ok := w.(*os.File); ok {
 		var winsize struct {
