@@ -939,6 +939,7 @@ android_filesystem {
 	name: "vendor_ramdisk",
 	type: "compressed_cpio",
 }
+
 android_filesystem {
 	name: "vendor_ramdisk_fragment",
 	type: "compressed_cpio",
@@ -955,6 +956,22 @@ bootimg {
 	vendorBootImg := result.ModuleForTests(t, "vendor_boot", "android_arm64_armv8-a")
 	mkBootimgCmd := vendorBootImg.Rule("build_bootimg").RuleParams.Command
 	android.AssertStringDoesContain(t, "Did not find vendor_ramdisk_fragment when building bootimg", mkBootimgCmd, "--ramdisk_name dlkm --vendor_ramdisk_fragment out/soong/.intermediates/vendor_ramdisk_fragment/android_common/vendor_ramdisk_fragment.img")
+}
+
+func TestRecoveryCpioArchivesRecoveryRoot(t *testing.T) {
+	t.Parallel()
+	result := fixture.RunTestWithBp(t, `
+android_filesystem {
+	name: "recovery_ramdisk",
+	partition_name: "recovery",
+	partition_type: "recovery",
+	type: "compressed_cpio",
+}`)
+
+	recovery := result.ModuleForTests(t, "recovery_ramdisk", "android_common")
+	command := recovery.Rule("build_cpio_image").RuleParams.Command
+	android.AssertStringDoesContain(t, "recovery cpio must archive its root subdirectory", command,
+		"recovery_ramdisk/android_common/recovery/root")
 }
 
 func TestRamdiskFragmentInTargetFiles(t *testing.T) {

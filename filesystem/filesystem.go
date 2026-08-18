@@ -834,6 +834,10 @@ func (f *filesystem) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 	var buildImagePropFileDeps android.Paths
 	var extraRootDirs android.Paths
 	var propFileForMiscInfo android.Path
+	cpioRootDir := rootDir
+	if f.partitionName() == "recovery" {
+		cpioRootDir = rootDir.Join(ctx, "root")
+	}
 
 	switch f.fsType(ctx) {
 	case ext4Type, erofsType, f2fsType:
@@ -848,9 +852,9 @@ func (f *filesystem) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 			f.output = prebuiltInfo.Output
 		}
 	case compressedCpioType:
-		f.output, extraRootDirs = f.buildCpioImage(ctx, builder, rootDir, true)
+		f.output, extraRootDirs = f.buildCpioImage(ctx, builder, cpioRootDir, true)
 	case cpioType:
-		f.output, extraRootDirs = f.buildCpioImage(ctx, builder, rootDir, false)
+		f.output, extraRootDirs = f.buildCpioImage(ctx, builder, cpioRootDir, false)
 	default:
 		return
 	}

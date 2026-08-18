@@ -1030,6 +1030,10 @@ func partitionSpecificFsProps(ctx android.EarlyModuleContext, partitions allGene
 		}
 
 		fsProps.Dirs = proptools.NewSimpleConfigurable(dirsWithRoot)
+		if partitionVars.BoardUsesRecoveryAsBoot {
+			fsProps.Type = proptools.NewSimpleConfigurable("compressed_cpio")
+			fsProps.Use_avb = nil
+		}
 		fsProps.Symlinks = symlinksWithNamePrefix(append(commonSymlinksFromRoot, filesystem.SymlinkDefinition{
 			Target: proptools.StringPtr("prop.default"),
 			Name:   proptools.StringPtr("default.prop"),
