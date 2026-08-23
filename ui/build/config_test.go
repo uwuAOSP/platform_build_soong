@@ -42,6 +42,14 @@ func testContext() Context {
 	}}
 }
 
+func TestUniNinjaBinOverride(t *testing.T) {
+	env := Environment([]string{"UNI_NINJA_BIN=/tmp/uni-ninja"})
+	config := Config{&configImpl{environ: &env, uniNinjaMode: true}}
+	if got := config.NinjaBin(); got != "/tmp/uni-ninja" {
+		t.Fatalf("NinjaBin() = %q, want /tmp/uni-ninja", got)
+	}
+}
+
 func TestConfigParseArgsJK(t *testing.T) {
 	ctx := testContext()
 
@@ -113,6 +121,39 @@ func TestConfigParseArgsJK(t *testing.T) {
 					tc.remaining, c.arguments)
 			}
 		})
+	}
+}
+
+func TestUniR8Parallel(t *testing.T) {
+	tests := []struct {
+		env      []string
+		parallel int
+		want     int
+	}{
+		{parallel: 18, want: 18},
+		{env: []string{"NINJA_UNI_R8_NUM_JOBS=9"}, parallel: 18, want: 9},
+		{env: []string{"NINJA_UNI_R8_NUM_JOBS=0"}, parallel: 18, want: 1},
+	}
+	for _, test := range tests {
+		env := Environment(test.env)
+		config := Config{&configImpl{environ: &env, parallel: test.parallel}}
+		if got := config.UniR8Parallel(); got != test.want {
+			t.Fatalf("UniR8Parallel() = %d, want %d", got, test.want)
+		}
+	}
+}
+
+func TestUniCompilerParallel(t *testing.T) {
+	env := Environment([]string{
+		"NINJA_UNI_JAVA_NUM_JOBS=11",
+		"NINJA_UNI_KOTLIN_NUM_JOBS=6",
+	})
+	config := Config{&configImpl{environ: &env, parallel: 18}}
+	if got := config.UniJavaParallel(); got != 11 {
+		t.Fatalf("UniJavaParallel() = %d, want 11", got)
+	}
+	if got := config.UniKotlinParallel(); got != 6 {
+		t.Fatalf("UniKotlinParallel() = %d, want 6", got)
 	}
 }
 

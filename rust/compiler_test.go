@@ -1,4 +1,5 @@
 // Copyright 2019 The Android Open Source Project
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,6 +40,25 @@ func TestFeaturesToFlags(t *testing.T) {
 	if !strings.Contains(libfooDylib.Args["rustcFlags"], "cfg 'feature=\"fizz\"'") ||
 		!strings.Contains(libfooDylib.Args["rustcFlags"], "cfg 'feature=\"buzz\"'") {
 		t.Fatalf("missing fizz and buzz feature flags for libfoo dylib, rustcFlags: %#v", libfooDylib.Args["rustcFlags"])
+	}
+}
+
+func TestIncrementalRustUsesModuleOutput(t *testing.T) {
+	ctx := testRust(t, `
+		rust_library {
+			name: "libfoo",
+			srcs: ["foo.rs"],
+			crate_name: "foo",
+			split_all_variants: true,
+		}`, android.FixtureMergeEnv(map[string]string{"SOONG_RUSTC_INCREMENTAL": "true"}))
+
+	rule := ctx.ModuleForTests(t, "libfoo", "android_arm64_armv8-a_dylib").Rule("rustc")
+	flags := rule.Args["rustcFlags"]
+	if !strings.Contains(flags, "-C incremental=out/soong/.intermediates/libfoo/") {
+		t.Fatalf("incremental cache is not module-local: %s", flags)
+	}
+	if strings.Contains(flags, "-C codegen-units=1") {
+		t.Fatalf("incremental compile kept single codegen unit: %s", flags)
 	}
 }
 

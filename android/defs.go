@@ -1,4 +1,5 @@
 // Copyright 2015 Google Inc. All rights reserved.
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -198,7 +199,13 @@ var (
 	remotePool = blueprint.NewBuiltinPool("remote_pool")
 
 	// Used for processes that need significant RAM to ensure there are not too many running in parallel.
-	highmemPool = blueprint.NewBuiltinPool("highmem_pool")
+	highmemPool   = blueprint.NewBuiltinPool("highmem_pool")
+	uniR8Pool     = blueprint.NewBuiltinPool("uni_r8_pool")
+	uniJavaPool   = blueprint.NewBuiltinPool("uni_java_pool")
+	uniKotlinPool = blueprint.NewBuiltinPool("uni_kotlin_pool")
+	UniR8Pool     = uniR8Pool
+	UniJavaPool   = uniJavaPool
+	UniKotlinPool = uniKotlinPool
 )
 
 var (

@@ -1,4 +1,5 @@
 // Copyright 2015 Google Inc. All rights reserved.
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,6 +23,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -110,6 +113,11 @@ type analysisProgress struct {
 	blueprintCnt int
 	mutex        sync.Mutex
 	lastStage    string
+}
+
+type analysisEventHookContext interface {
+	SetEventStartedHook(func(string))
+	SetEventProgressHook(func(string, int, int))
 }
 
 func newAnalysisProgress(file, moduleListFile string) *analysisProgress {
@@ -262,6 +270,25 @@ func writeNinjaHint(ctx *android.Context) error {
 	return nil
 }
 
+func writeUniR8Modules(ctx *android.Context, path string) error {
+	if path == "" {
+		return nil
+	}
+	rules := map[string]struct{}{
+		"r8": {}, "r8RE": {}, "d8r8": {}, "d8r8RE": {},
+		"d8Incr8": {}, "d8Incr8RE": {},
+	}
+	modules := ctx.Context.GetModuleNamesWithRules(rules)
+	if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
+		return err
+	}
+	data := []byte(strings.Join(modules, "\n"))
+	if len(data) > 0 {
+		data = append(data, '\n')
+	}
+	return pathtools.WriteFileIfChanged(path, data, 0666)
+}
+
 func writeMetrics(ctx *android.Context, configuration android.Config, eventHandler *metrics.EventHandler, metricsDir string) {
 	if len(metricsDir) < 1 {
 		fmt.Fprintf(os.Stderr, "\nMissing required env var for generating soong metrics: LOG_DIR\n")
@@ -406,6 +433,18 @@ func parseAvailableEnv() map[string]string {
 	return result
 }
 
+func configureAnalysisRuntime(availableEnv map[string]string) (int64, int) {
+	memoryLimit, _ := strconv.ParseInt(availableEnv["SOONG_ANALYSIS_MEMORY_LIMIT_BYTES"], 10, 64)
+	if memoryLimit > 0 {
+		debug.SetMemoryLimit(memoryLimit)
+	}
+	gcPercent, _ := strconv.Atoi(availableEnv["SOONG_ANALYSIS_GC_PERCENT"])
+	if gcPercent > 0 {
+		debug.SetGCPercent(gcPercent)
+	}
+	return memoryLimit, gcPercent
+}
+
 func main() {
 	flag.Parse()
 
@@ -421,6 +460,7 @@ func main() {
 	android.InitSandbox(topDir)
 
 	availableEnv := parseAvailableEnv()
+	analysisMemoryLimit, _ := configureAnalysisRuntime(availableEnv)
 
 	if availableEnv["SOONG_ENFORCE_NO_REANALYSIS"] == "true" {
 		fmt.Fprintln(os.Stderr, "Reanalysis will run due to build graph or product configuration change.")
@@ -439,8 +479,10 @@ func main() {
 
 	ctx := newContext(configuration)
 	progress := newAnalysisProgress(statusFile, cmdlineArgs.ModuleListFile)
-	ctx.SetEventStartedHook(progress.eventStarted)
-	ctx.SetEventProgressHook(progress.eventProgress)
+	if hookContext, ok := any(ctx).(analysisEventHookContext); ok {
+		hookContext.SetEventStartedHook(progress.eventStarted)
+		hookContext.SetEventProgressHook(progress.eventProgress)
+	}
 	progress.report("Initializing Android.bp analysis...")
 	android.StartBackgroundMetrics(configuration)
 
@@ -468,8 +510,15 @@ func main() {
 		ctx.SetSplitAllVariants(true)
 	}
 
+	if analysisMemoryLimit > 0 {
+		progress.report(fmt.Sprintf("Analyzing Android.bp files (memory limit %.1f GiB)...",
+			float64(analysisMemoryLimit)/(1024*1024*1024)))
+	} else {
+		progress.report("Analyzing Android.bp files...")
+	}
 	ctx.Register()
 	finalOutputFile, ninjaDeps := runSoongOnlyBuild(ctx)
+	maybeQuit(writeUniR8Modules(ctx, availableEnv["UNI_R8_MODULES_FILE"]), "write uni R8 module list")
 
 	ninjaDeps = append(ninjaDeps, configuration.ProductVariablesFileName)
 	ninjaDeps = append(ninjaDeps, usedEnvFile)

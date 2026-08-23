@@ -1,4 +1,5 @@
 // Copyright 2019 The Android Open Source Project
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -421,7 +422,7 @@ func transformSrctoCrate(ctx android.ModuleContext, main android.Path, deps Path
 
 	// Enable incremental compilation if requested by user
 	if ctx.Config().IsEnvTrue("SOONG_RUSTC_INCREMENTAL") {
-		incrementalPath := android.PathForOutput(ctx, "rustc").String()
+		incrementalPath := android.PathForModuleOut(ctx, "rustc").String()
 
 		rustcFlags = append(rustcFlags, "-C incremental="+incrementalPath)
 	} else if ctx.Config().Eng() {

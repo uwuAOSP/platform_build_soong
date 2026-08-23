@@ -1,4 +1,5 @@
 // Copyright 2017 Google Inc. All rights reserved.
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -88,12 +89,46 @@ var commands = []command{
 		stdio:        customStdio,
 		run:          dumpVars,
 	}, {
+		flag:        "--uni-prepare-mode",
+		description: "prepare a reusable uni build graph without running Ninja",
+		config:      uniPrepareConfig,
+		stdio:       stdio,
+		run:         runUniPrepare,
+	}, {
+		flag:        "--uni-ninja-mode",
+		description: "run Ninja against a graph prepared by uni",
+		config:      uniNinjaConfig,
+		stdio:       stdio,
+		run:         runMake,
+	}, {
 		flag:        "--build-mode",
 		description: "build modules based on the specified build action",
 		config:      buildActionConfig,
 		stdio:       stdio,
 		run:         runMake,
 	},
+}
+
+func uniPrepareConfig(ctx build.Context, args ...string) build.Config {
+	config := build.NewConfig(ctx, args...)
+	config.SetUniPrepareMode()
+	return config
+}
+
+func uniNinjaConfig(ctx build.Context, args ...string) build.Config {
+	config := build.NewConfig(ctx, args...)
+	config.SetUniNinjaMode()
+	if err := build.LoadUniState(config); err != nil {
+		ctx.Fatalf("Failed to load uni state: %v", err)
+	}
+	return config
+}
+
+func runUniPrepare(ctx build.Context, config build.Config, args []string) {
+	build.Build(ctx, config)
+	if err := build.WriteUniState(config, args); err != nil {
+		ctx.Fatalf("Failed to write uni state: %v", err)
+	}
 }
 
 // indexList returns the index of first found s. -1 is return if s is not

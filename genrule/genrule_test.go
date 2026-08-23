@@ -30,6 +30,25 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestGenruleAndroidMkProvider(t *testing.T) {
+	result := android.GroupFixturePreparers(
+		prepareForGenRuleTest,
+		android.PrepareForTestWithAndroidMk,
+	).RunTestWithBp(t, `
+		genrule {
+			name: "foo",
+			out: ["foo.txt"],
+			cmd: "touch $(out)",
+		}
+	`)
+
+	module := result.ModuleForTests(t, "foo", "").Module()
+	info := android.AndroidMkInfoForTest(t, result.TestContext, module).PrimaryInfo
+	android.AssertStringEquals(t, "class", "ETC", info.Class)
+	android.AssertPathRelativeToTopEquals(t, "output", "out/soong/.intermediates/foo/gen/foo.txt", info.OutputFile.Path())
+	android.AssertStringListContains(t, "uninstallable", info.EntryMap["LOCAL_UNINSTALLABLE_MODULE"], "true")
+}
+
 var prepareForGenRuleTest = android.GroupFixturePreparers(
 	android.PrepareForTestWithArchMutator,
 	android.PrepareForTestWithDefaults,

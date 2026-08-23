@@ -1,4 +1,5 @@
 // Copyright 2015 Google Inc. All rights reserved.
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -82,6 +83,7 @@ var (
 	// * Runs additional tools on the output to prepare for next iteration
 	javacInc, javacIncRE = pctx.MultiCommandRemoteStaticRules("javac-inc",
 		blueprint.RuleParams{
+			Pool: android.UniJavaPool,
 			Command: `rm -rf "$annoSrcJar.tmp" "$out.tmp" && ` +
 				`mkdir -p "$annoDir" && ` +
 				`if [ -s $out.rsp ] && [ -s $srcJarList ] ; then ` +
@@ -157,6 +159,7 @@ var (
 	// .srcjar files are unzipped into a temporary directory when compiled with javac.
 	javac, javacRE = pctx.MultiCommandRemoteStaticRules("javac",
 		blueprint.RuleParams{
+			Pool: android.UniJavaPool,
 			Command: `rm -rf "$outDir" "$annoDir" "$annoSrcJar.tmp" "$srcJarDir" "$out.tmp" && ` +
 				`mkdir -p "$outDir" "$annoDir" "$srcJarDir" && ` +
 				`${config.ZipSyncCmd} -d $srcJarDir -l $srcJarDir/list -f "*.java" $srcJars && ` +
@@ -276,6 +279,7 @@ var (
 
 	turbine, turbineRE = pctx.RemoteStaticRules("turbine",
 		blueprint.RuleParams{
+			Pool: android.UniJavaPool,
 			Command: `$reTemplate${config.JavaCmd} ${config.JavaVmFlags} -jar ${config.TurbineJar} $outputFlags ` +
 				`--sources @$out.rsp ` +
 				`--javacopts ${config.CommonJdkFlags} ` +

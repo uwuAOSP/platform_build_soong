@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# Copyright (C) 2026 The uwuAOSP Project
+# SPDX-License-Identifier: Apache-2.0
+
+set -euo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../make/shell_utils.sh"
+require_top
+
+uni_src="$TOP/uwuCLI"
+uni_out_dir="${OUT_DIR:-out}"
+if [[ "$uni_out_dir" != /* ]]; then
+    uni_out_dir="$TOP/$uni_out_dir"
+fi
+uni_bin="$uni_out_dir/uwuCLI/bin/uni"
+go_bin="$TOP/prebuilts/go/linux-x86/bin/go"
+
+if [[ ! -x "$go_bin" ]]; then
+    echo "uni: Go toolchain not found: $go_bin" >&2
+    exit 1
+fi
+
+rebuild=false
+if [[ ! -x "$uni_bin" ]]; then
+    rebuild=true
+elif [[ "$go_bin" -nt "$uni_bin" ]]; then
+    rebuild=true
+elif [[ -n "$(find "$uni_src" -type f \( -name '*.go' -o -name 'go.mod' \) -newer "$uni_bin" -print -quit)" ]]; then
+    rebuild=true
+fi
+
+if [[ "$rebuild" == true ]]; then
+    mkdir -p "$(dirname "$uni_bin")"
+    (
+        cd "$uni_src"
+        CGO_ENABLED=0 GOENV=off GOPROXY=off \
+            GOROOT="$(dirname "$(dirname "$go_bin")")" \
+            "$go_bin" build -buildvcs=false -trimpath -o "$uni_bin" ./cmd/uni
+    )
+fi
+
+exec "$uni_bin" "$@"

@@ -781,9 +781,14 @@ func (g *Module) IDEInfo(ctx android.BaseModuleContext, dpInfo *android.IdeInfo)
 }
 
 func (g *Module) AndroidMk() android.AndroidMkData {
+	var outputFile android.OptionalPath
+	if len(g.outputFiles) > 0 {
+		outputFile = android.OptionalPathForPath(g.outputFiles[0])
+	}
+
 	return android.AndroidMkData{
 		Class:      "ETC",
-		OutputFile: android.OptionalPathForPath(g.outputFiles[0]),
+		OutputFile: outputFile,
 		SubName:    g.subName,
 		Extra: []android.AndroidMkExtraFunc{
 			func(w io.Writer, outputFile android.Path) {
@@ -800,6 +805,33 @@ func (g *Module) AndroidMk() android.AndroidMkData {
 	}
 }
 
+func (g *Module) PrepareAndroidMKProviderInfo(_ android.Config) *android.AndroidMkProviderInfo {
+	var outputFile android.OptionalPath
+	if len(g.outputFiles) > 0 {
+		outputFile = android.OptionalPathForPath(g.outputFiles[0])
+	}
+
+	info := &android.AndroidMkProviderInfo{
+		PrimaryInfo: android.AndroidMkInfo{
+			Class:      "ETC",
+			OutputFile: outputFile,
+			SubName:    g.subName,
+		},
+	}
+	info.PrimaryInfo.SetBool("LOCAL_UNINSTALLABLE_MODULE", true)
+
+	if g.subName != "" {
+		name := g.BaseModuleName()
+		info.PrimaryInfo.FooterStrings = append(info.PrimaryInfo.FooterStrings,
+			".PHONY: "+name,
+			name+": "+name+g.subName,
+		)
+	}
+
+	return info
+}
+
+var _ android.AndroidMkProviderInfoProducer = (*Module)(nil)
 var _ android.ApexModule = (*Module)(nil)
 
 // Implements android.ApexModule

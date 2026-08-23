@@ -1,4 +1,5 @@
 // Copyright 2017 Google Inc. All rights reserved.
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -62,6 +63,9 @@ func runNinja(ctx Context, config Config, ninjaArgs []string) {
 		parallel = config.RemoteParallel()
 	} else {
 		parallel = config.Parallel()
+	}
+	if config.UniNinjaMode() && config.UniNinjaPhase() != "only" && config.ninjaCommand == NINJA_SISO {
+		ctx.Fatalf("Siso cannot preserve incremental state across uni phases; use SOONG_NINJA=ninja")
 	}
 
 	sisoExperiments := []string{}
@@ -163,6 +167,9 @@ func runNinja(ctx Context, config Config, ninjaArgs []string) {
 			"-w", "dupbuild=err",
 			"-w", "missingdepfile=err",
 			"-j", strconv.Itoa(parallel),
+		}
+		if config.UniNinjaMode() && config.Environment().IsEnvTrue("UNI_ASSUME_EXISTING") {
+			args = append(args, "-d", "assumeexisting")
 		}
 		// Missing outputs will be treated as errors.
 		// BUILD_BROKEN_MISSING_OUTPUTS can be used to bypass this check.
@@ -319,6 +326,7 @@ func runNinja(ctx Context, config Config, ninjaArgs []string) {
 			"CCACHE_BASEDIR",
 			"CCACHE_CPP2",
 			"CCACHE_DIR",
+			"CCACHE_FILECLONE",
 
 			// LLVM compiler wrapper options
 			"TOOLCHAIN_RUSAGE_OUTPUT",

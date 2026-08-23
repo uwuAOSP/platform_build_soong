@@ -1,4 +1,5 @@
 // Copyright 2017 Google Inc. All rights reserved.
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -185,6 +186,13 @@ type configImpl struct {
 
 	// Control which JDK is used for builds
 	useJdk25 bool
+
+	// uni prepares the build graph once, then reuses it for a sequence of Ninja
+	// invocations. These modes are only set by soong_ui's private uni commands.
+	uniPrepareMode       bool
+	uniNinjaMode         bool
+	uniNinjaPhase        string
+	uniCombinedNinjaFile string
 
 	// The directory where Siso config can be found.
 	sisoConfigDir string
@@ -1508,6 +1516,40 @@ func (c *configImpl) SetSkipNinja(v bool) {
 	c.skipNinja = v
 }
 
+func (c *configImpl) SetUniPrepareMode() {
+	c.uniPrepareMode = true
+	c.skipNinja = true
+}
+
+func (c *configImpl) UniPrepareMode() bool {
+	return c.uniPrepareMode
+}
+
+func (c *configImpl) SetUniNinjaMode() {
+	c.uniNinjaMode = true
+	c.skipConfig = true
+	c.skipSoong = true
+	c.skipKati = true
+	c.skipKatiNinja = false
+	c.skipMetricsUpload = true
+	c.uniNinjaPhase, _ = c.environ.Get("UNI_NINJA_PHASE")
+	if c.uniNinjaPhase == "" {
+		c.uniNinjaPhase = "only"
+	}
+}
+
+func (c *configImpl) UniNinjaMode() bool {
+	return c.uniNinjaMode
+}
+
+func (c *configImpl) UniNinjaPhase() string {
+	return c.uniNinjaPhase
+}
+
+func (c *configImpl) SetUniCombinedNinjaFile(path string) {
+	c.uniCombinedNinjaFile = path
+}
+
 func (c *configImpl) SkipConfig() bool {
 	return c.skipConfig
 }
@@ -1614,6 +1656,30 @@ func (c *configImpl) HighmemParallel() int {
 	}
 	// No restriction on highmem processes
 	return parallel
+}
+
+func (c *configImpl) UniR8Parallel() int {
+	if parallel, ok := c.environ.GetInt("NINJA_UNI_R8_NUM_JOBS"); ok {
+		return max(1, parallel)
+	}
+	if c.UseRemoteBuild() && c.RemoteParallel() > 0 {
+		return c.RemoteParallel()
+	}
+	return c.Parallel()
+}
+
+func (c *configImpl) UniJavaParallel() int {
+	if parallel, ok := c.environ.GetInt("NINJA_UNI_JAVA_NUM_JOBS"); ok {
+		return max(1, parallel)
+	}
+	return c.Parallel()
+}
+
+func (c *configImpl) UniKotlinParallel() int {
+	if parallel, ok := c.environ.GetInt("NINJA_UNI_KOTLIN_NUM_JOBS"); ok {
+		return max(1, parallel)
+	}
+	return c.Parallel()
 }
 
 func (c *configImpl) TotalRAM() uint64 {
@@ -1973,6 +2039,9 @@ func (c *configImpl) SoongNoDistNinjaFile() string {
 }
 
 func (c *configImpl) CombinedNinjaFile() string {
+	if c.uniCombinedNinjaFile != "" {
+		return c.uniCombinedNinjaFile
+	}
 	if c.katiSuffix == "" {
 		return filepath.Join(c.OutDir(), "combined.ninja")
 	}
@@ -2046,6 +2115,11 @@ func (c *configImpl) KatiBin() string {
 }
 
 func (c *configImpl) NinjaBin() string {
+	if c.UniNinjaMode() {
+		if path, ok := c.Environment().Get("UNI_NINJA_BIN"); ok && path != "" {
+			return path
+		}
+	}
 	binName := "ninja"
 	if c.UseABFS() {
 		binName = "ninjago"

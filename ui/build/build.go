@@ -1,4 +1,5 @@
 // Copyright 2017 Google Inc. All rights reserved.
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -43,9 +44,13 @@ func SetupOutDir(ctx Context, config Config) {
 	ensureEmptyFileExists(ctx, filepath.Join(config.OutDir(), ".out-dir"))
 
 	if buildDateTimeFile, ok := config.environ.Get("BUILD_DATETIME_FILE"); ok {
-		err := os.WriteFile(buildDateTimeFile, []byte(config.buildDateTime), 0666) // a+rw
-		if err != nil {
-			ctx.Fatalln("Failed to write BUILD_DATETIME to file:", err)
+		if config.UniNinjaMode() {
+			writeValueIfChanged(ctx, buildDateTimeFile, config.buildDateTime)
+		} else {
+			err := os.WriteFile(buildDateTimeFile, []byte(config.buildDateTime), 0666) // a+rw
+			if err != nil {
+				ctx.Fatalln("Failed to write BUILD_DATETIME to file:", err)
+			}
 		}
 	} else {
 		ctx.Fatalln("Missing BUILD_DATETIME_FILE")
@@ -104,6 +109,12 @@ builddir = {{.OutDir}}
 {{end -}}
 pool highmem_pool
  depth = {{.HighmemParallel}}
+pool uni_r8_pool
+ depth = {{.UniR8Parallel}}
+pool uni_java_pool
+ depth = {{.UniJavaParallel}}
+pool uni_kotlin_pool
+ depth = {{.UniKotlinParallel}}
 {{if and (not .SkipKatiNinja) .HasKatiSuffix}}
 subninja {{.KatiBuildNinjaFile}}
 subninja {{.KatiPackageNinjaFile}}
@@ -117,12 +128,15 @@ subninja {{.SoongNinjaFile}}
 
 func createCombinedBuildNinjaFile(ctx Context, config Config) {
 	// If we're in SkipKati mode but want to run kati ninja, skip creating this file if it already exists
-	if config.SkipKati() && !config.SkipKatiNinja() {
+	if config.SkipKati() && !config.SkipKatiNinja() && !config.UniNinjaMode() {
 		if _, err := os.Stat(config.CombinedNinjaFile()); err == nil || !os.IsNotExist(err) {
 			return
 		}
 	}
 
+	if err := os.MkdirAll(filepath.Dir(config.CombinedNinjaFile()), 0777); err != nil {
+		ctx.Fatalln("Failed to create combined ninja directory:", err)
+	}
 	file, err := os.Create(config.CombinedNinjaFile())
 	if err != nil {
 		ctx.Fatalln("Failed to create combined ninja file:", err)
@@ -375,7 +389,9 @@ func Build(ctx Context, config Config) {
 
 	// Still generate the kati suffix in soong-only builds because soong-only still uses kati for
 	// the packaging step. Also, the kati suffix is used for the combined ninja file.
-	genKatiSuffix(ctx, config)
+	if !config.UniNinjaMode() {
+		genKatiSuffix(ctx, config)
+	}
 
 	if what&RunSoong != 0 {
 		runSoong(ctx, config, what&RunBuildTests != 0)
@@ -386,7 +402,7 @@ func Build(ctx Context, config Config) {
 		runKatiBuild(ctx, config)
 		runKatiPackage(ctx, config)
 
-	} else if what&RunKatiNinja != 0 {
+	} else if what&RunKatiNinja != 0 && !config.UniNinjaMode() {
 		// Load last Kati Suffix if it exists
 		if katiSuffix, err := os.ReadFile(config.LastKatiSuffixFile()); err == nil {
 			ctx.Verboseln("Loaded previous kati config:", string(katiSuffix))
@@ -394,7 +410,9 @@ func Build(ctx Context, config Config) {
 		}
 	}
 
-	os.WriteFile(config.LastKatiSuffixFile(), []byte(config.KatiSuffix()), 0666) // a+rw
+	if !config.UniNinjaMode() {
+		os.WriteFile(config.LastKatiSuffixFile(), []byte(config.KatiSuffix()), 0666) // a+rw
+	}
 
 	// Write combined ninja file
 	createCombinedBuildNinjaFile(ctx, config)
@@ -412,19 +430,24 @@ func Build(ctx Context, config Config) {
 	}
 
 	if what&RunNinja != 0 {
-		if what&RunKati != 0 {
+		if what&RunKati != 0 || (config.UniNinjaMode() && config.UniNinjaPhase() == "first") {
 			installCleanIfNecessary(ctx, config)
 		}
-		partialCompileCleanIfNecessary(ctx, config)
+		if !config.UniNinjaMode() || config.UniNinjaPhase() == "first" || config.UniNinjaPhase() == "only" {
+			partialCompileCleanIfNecessary(ctx, config)
+		}
 		runNinjaForBuild(ctx, config)
-		updateBuildIdDir(ctx, config)
+		if !config.UniNinjaMode() || config.UniNinjaPhase() == "final" || config.UniNinjaPhase() == "only" {
+			updateBuildIdDir(ctx, config)
 
-		runUpdateApi(ctx, config)
-		runUpdateAidlApi(ctx, config)
-		createCompDbSymlink(ctx, config)
+			runUpdateApi(ctx, config)
+			runUpdateAidlApi(ctx, config)
+			createCompDbSymlink(ctx, config)
+		}
 	}
 
-	if what&RunDistActions != 0 {
+	if what&RunDistActions != 0 && !config.UniPrepareMode() &&
+		(!config.UniNinjaMode() || config.UniNinjaPhase() == "final" || config.UniNinjaPhase() == "only") {
 		runDistActions(ctx, config)
 	}
 	done = true

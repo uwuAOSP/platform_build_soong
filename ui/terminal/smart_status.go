@@ -24,6 +24,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"android/soong/ui/status"
 )
@@ -42,7 +43,8 @@ type smartStatusOutput struct {
 
 	lock sync.Mutex
 
-	haveBlankLine bool
+	haveBlankLine  bool
+	lastStatusLine string
 
 	tableMode             bool
 	tableHeight           int
@@ -218,6 +220,7 @@ func (s *smartStatusOutput) Flush() {
 	s.requestLine()
 
 	s.runningActions = nil
+	s.lastStatusLine = ""
 
 	if s.tableMode {
 		// Update the table after clearing runningActions to clear it
@@ -267,6 +270,11 @@ func (s *smartStatusOutput) statusLine(str string) {
 	// Limit line width to the terminal width, otherwise we'll wrap onto
 	// another line and we won't delete the previous line.
 	str = elide(str, s.termWidth)
+	s.lastStatusLine = str
+	if s.tableMode {
+		s.actionTable()
+		return
+	}
 
 	// Move to the beginning on the line, turn on bold, print the output,
 	// turn off bold, then clear the rest of the line.
@@ -277,10 +285,15 @@ func (s *smartStatusOutput) statusLine(str string) {
 }
 
 func elide(str string, width int) string {
+	str = strings.ToValidUTF8(str, "\uFFFD")
 	if width > 0 && len(str) > width {
 		// TODO: Just do a max. Ninja elides the middle, but that's
 		// more complicated and these lines aren't that important.
-		str = str[:width]
+		end := width
+		for end > 0 && !utf8.RuneStart(str[end]) {
+			end--
+		}
+		str = str[:end]
 	}
 
 	return str
@@ -387,8 +400,10 @@ func (s *smartStatusOutput) actionTable() {
 		// Move the cursor to the correct line of the non-scrolling region
 		fmt.Fprint(s.writer, ansi.setCursor(scrollingHeight+1+tableLine, 1))
 
-		if tableLine < len(s.runningActions) {
-			runningAction := s.runningActions[tableLine]
+		if tableLine == 0 && s.lastStatusLine != "" {
+			fmt.Fprint(s.writer, ansi.bold(), elide(s.lastStatusLine, s.termWidth), ansi.regular())
+		} else if actionIndex := tableLine - 1; actionIndex >= 0 && actionIndex < len(s.runningActions) {
+			runningAction := s.runningActions[actionIndex]
 
 			seconds := int(time.Since(runningAction.startTime).Round(time.Second).Seconds())
 

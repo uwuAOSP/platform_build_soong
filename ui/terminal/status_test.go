@@ -18,11 +18,36 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
+	"unicode/utf8"
 
 	"android/soong/ui/status"
 )
+
+func TestSmartStatusTableKeepsProgressVisible(t *testing.T) {
+	t.Setenv(tableHeightEnVar, "3")
+	smart := &fakeSmartTerminal{termWidth: 80, termHeight: 24}
+	stat := NewStatusOutput(smart, "", false, false, false, false, false)
+	runner := newRunner(stat, 2)
+	runner.startAction(action1)
+	runner.startAction(action2)
+	stat.Message(status.PrintLvl, "warning")
+
+	output := smart.String()
+	if !strings.Contains(output, "[  0% 0/2] action2") {
+		t.Fatalf("progress disappeared from action table: %q", output)
+	}
+	stat.Flush()
+}
+
+func TestElideKeepsUTF8Valid(t *testing.T) {
+	got := elide("编译进度", 5)
+	if !utf8.ValidString(got) {
+		t.Fatalf("elide returned invalid UTF-8: %q", got)
+	}
+}
 
 func TestStatusOutput(t *testing.T) {
 	tests := []struct {

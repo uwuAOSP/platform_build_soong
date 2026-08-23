@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2025 The Android Open Source Project
+ * Copyright (C) 2026 The uwuAOSP Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,6 +106,7 @@ fun main(args: Array<String>) {
     when (result) {
         CompilationResult.COMPILATION_SUCCESS -> {
             writeCacheMarker(cacheMarker)
+            exitProcess(0)
         }
         CompilationResult.COMPILATION_ERROR -> {
             writeCacheMarker(cacheMarker)
@@ -199,10 +201,11 @@ fun doBtaCompilation(
 
     val service = CompilationService.loadImplementation(loader)
     val executionConfig = service.makeCompilerExecutionStrategyConfiguration()
-    // TODO: investigate using the daemon.
-    // Right now, it hangs (https://youtrack.jetbrains.com/issue/KT-75142/)
-    // executionConfig.useDaemonStrategy(jvmArgs)
-    executionConfig.useInProcessStrategy()
+    if (System.getenv("SOONG_KOTLIN_DAEMON")?.equals("true", ignoreCase = true) == true) {
+        executionConfig.useDaemonStrategy(jvmArgs)
+    } else {
+        executionConfig.useInProcessStrategy()
+    }
     val compilationConfig = service.makeJvmCompilationConfiguration()
 
     val cpsnapshotParameters = getClasspathSnapshotParameters(workingDirectory, classPath)
@@ -242,13 +245,17 @@ fun doBtaCompilation(
     val mArgs = args.toMutableList()
     mArgs.add("-cp")
     mArgs.add(classPath.joinToString(":"))
-    return service.compileJvm(
-        pid,
-        executionConfig,
-        compilationConfig,
-        sources.map { File(it) },
-        mArgs,
-    )
+    return try {
+        service.compileJvm(
+            pid,
+            executionConfig,
+            compilationConfig,
+            sources.map { File(it) },
+            mArgs,
+        )
+    } finally {
+        service.finishProjectCompilation(pid)
+    }
 }
 
 @OptIn(ExperimentalBuildToolsApi::class)

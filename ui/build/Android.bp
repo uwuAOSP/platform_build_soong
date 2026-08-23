@@ -72,6 +72,7 @@ bootstrap_go_package {
         "sandbox_config.go",
         "soong.go",
         "test_build.go",
+        "uni.go",
         "update_api.go",
         "upload.go",
         "util.go",
@@ -83,6 +84,7 @@ bootstrap_go_package {
         "proc_sync_test.go",
         "rbe_test.go",
         "staging_snapshot_test.go",
+        "uni_test.go",
         "util_test.go",
     ],
     darwin: {

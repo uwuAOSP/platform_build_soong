@@ -1,4 +1,5 @@
 // Copyright 2019 Google Inc. All rights reserved.
+// Copyright (C) 2026 The uwuAOSP Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -64,6 +65,7 @@ const moveDeltaStateFile = `mv $newStateFile $priorStateFile && rm $sourceDeltaF
 
 var kotlinc = pctx.AndroidRemoteStaticRule("kotlinc", android.RemoteRuleSupports{},
 	blueprint.RuleParams{
+		Pool:    android.UniKotlinPool,
 		Command: inputDeltaCmd + ` && ` + nonIncKotlinCmd + ` && ` + moveDeltaStateFile,
 		CommandDeps: []string{
 			"${config.FindInputDeltaCmd}",
@@ -102,6 +104,7 @@ var kotlinJarSnapshot = pctx.AndroidRemoteStaticRule("kotlin-jar-snapshot", andr
 
 var kotlinIncremental = pctx.AndroidRemoteStaticRule("kotlin-incremental", android.RemoteRuleSupports{},
 	blueprint.RuleParams{
+		Pool: android.UniKotlinPool,
 		Command: // Incremental
 
 		inputDeltaCmd + ` && ` +
@@ -471,6 +474,7 @@ var kspIncrementalClean = pctx.AndroidStaticRule("ksp-partialcompileclean",
 
 var kspProcessingRule = pctx.AndroidRemoteStaticRule("ksp", android.RemoteRuleSupports{},
 	blueprint.RuleParams{
+		Pool: android.UniKotlinPool,
 		Command: `mkdir -p "$kspDir/out/java" "$kspDir/out/caches" "$kspDir/out/classes" "$kspDir/out/kotlin" "$kspDir/out/resources" && ` +
 			` . ${config.UsePartialCompileFile} && ` +
 			inputDeltaCmd + ` && ` +
@@ -529,6 +533,7 @@ var kspProcessingRule = pctx.AndroidRemoteStaticRule("ksp", android.RemoteRuleSu
 
 var kaptStubs = pctx.AndroidRemoteStaticRule("kaptStubs", android.RemoteRuleSupports{},
 	blueprint.RuleParams{
+		Pool: android.UniKotlinPool,
 		Command: `rm -rf "$srcJarDir" "$kotlinBuildFile" "$kaptDir" && ` +
 			`mkdir -p "$srcJarDir" "$kaptDir/sources" "$kaptDir/classes" && ` +
 			// Only include java files in our src jar, so don't use kotlinZipSyncCmd
