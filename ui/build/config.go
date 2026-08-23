@@ -1534,6 +1534,7 @@ func (c *configImpl) SetUniNinjaMode() {
 	c.skipConfig = true
 	c.skipSoong = true
 	c.skipKati = true
+	c.skipKatiNinja = false
 	c.skipMetricsUpload = true
 	c.uniNinjaPhase, _ = c.environ.Get("UNI_NINJA_PHASE")
 	if c.uniNinjaPhase == "" {
