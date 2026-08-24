@@ -22,6 +22,17 @@ import (
 	"testing"
 )
 
+func TestUniPrepareDisablesIncrementalAnalysis(t *testing.T) {
+	config := Config{&configImpl{incrementalBuildActions: true}}
+	config.SetUniPrepareMode()
+	if config.incrementalBuildActions {
+		t.Fatal("uni prepare must not restore incremental analysis state")
+	}
+	if !config.incrementalBuildActionsSetInEnv {
+		t.Fatal("release configuration may re-enable incremental analysis")
+	}
+}
+
 func TestReadUniProductPackages(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "soong.variables")
 	data := `{
