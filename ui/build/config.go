@@ -1523,6 +1523,8 @@ func (c *configImpl) SetSkipNinja(v bool) {
 func (c *configImpl) SetUniPrepareMode() {
 	c.uniPrepareMode = true
 	c.skipNinja = true
+	c.incrementalBuildActions = false
+	c.incrementalBuildActionsSetInEnv = true
 }
 
 func (c *configImpl) UniPrepareMode() bool {
