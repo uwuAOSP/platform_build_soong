@@ -1504,6 +1504,10 @@ func (c *configImpl) SkipKatiNinja() bool {
 	return c.skipKatiNinja
 }
 
+func (c *configImpl) SetSkipKatiNinja(v bool) {
+	c.skipKatiNinja = v
+}
+
 func (c *configImpl) SkipSoong() bool {
 	return c.skipSoong
 }
@@ -1530,7 +1534,6 @@ func (c *configImpl) SetUniNinjaMode() {
 	c.skipConfig = true
 	c.skipSoong = true
 	c.skipKati = true
-	c.skipKatiNinja = false
 	c.skipMetricsUpload = true
 	c.uniNinjaPhase, _ = c.environ.Get("UNI_NINJA_PHASE")
 	if c.uniNinjaPhase == "" {

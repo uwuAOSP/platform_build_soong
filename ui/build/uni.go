@@ -25,7 +25,7 @@ import (
 	"strings"
 )
 
-const uniStateVersion = 6
+const uniStateVersion = 7
 
 type uniGraphFile struct {
 	Path        string `json:"path"`
@@ -45,6 +45,7 @@ type uniState struct {
 	BuildDateTime     string         `json:"build_date_time"`
 	BuildDateTimeFile string         `json:"build_date_time_file"`
 	KatiSuffix        string         `json:"kati_suffix"`
+	SkipKatiNinja     bool           `json:"skip_kati_ninja"`
 	CombinedNinja     string         `json:"combined_ninja"`
 	SoongNinja        string         `json:"soong_ninja"`
 	SoongVariables    string         `json:"soong_variables"`
@@ -227,6 +228,7 @@ func WriteUniState(config Config, originalArgs []string) error {
 		BuildDateTime:     config.BuildDateTime(),
 		BuildDateTimeFile: buildDateTimeFile,
 		KatiSuffix:        config.KatiSuffix(),
+		SkipKatiNinja:     config.SkipKatiNinja(),
 		CombinedNinja:     combinedNinja,
 		SoongNinja:        soongNinja,
 		SoongVariables:    soongVariables,
@@ -318,6 +320,7 @@ func LoadUniState(config Config) error {
 	}
 	config.SetTargetDevice(state.TargetDevice)
 	config.SetKatiSuffix(state.KatiSuffix)
+	config.SetSkipKatiNinja(state.SkipKatiNinja)
 	config.buildDateTime = state.BuildDateTime
 	config.Environment().Set("BUILD_DATETIME", state.BuildDateTime)
 	config.Environment().Set("BUILD_DATETIME_FILE", state.BuildDateTimeFile)
