@@ -733,12 +733,12 @@ func (p *PackagingBase) GatherPackagingSpecs(ctx ModuleContext) map[string]Packa
 func (p *PackagingBase) CopySpecsToDir(ctx ModuleContext, builder *RuleBuilder, specs map[string]PackagingSpec, dir WritablePath) (entries []string) {
 	dirsToSpecs := make(map[WritablePath]map[string]PackagingSpec)
 	dirsToSpecs[dir] = specs
-	return p.CopySpecsToDirs(ctx, builder, dirsToSpecs, false)
+	return p.CopySpecsToDirs(ctx, builder, dirsToSpecs, false, false)
 }
 
 // CopySpecsToDirs is a helper that will add commands to the rule builder to copy the PackagingSpec
 // entries into corresponding directories.
-func (p *PackagingBase) CopySpecsToDirs(ctx ModuleContext, builder *RuleBuilder, dirsToSpecs map[WritablePath]map[string]PackagingSpec, preserveTimestamps bool) (entries []string) {
+func (p *PackagingBase) CopySpecsToDirs(ctx ModuleContext, builder *RuleBuilder, dirsToSpecs map[WritablePath]map[string]PackagingSpec, preserveTimestamps bool, useHardlinks bool) (entries []string) {
 	empty := true
 	for _, specs := range dirsToSpecs {
 		if len(specs) > 0 {
@@ -772,11 +772,18 @@ func (p *PackagingBase) CopySpecsToDirs(ctx ModuleContext, builder *RuleBuilder,
 				builder.Command().Textf("mkdir -p %s", destDir)
 			}
 			if ps.symlinkTarget == "" {
-				cmd := builder.Command().Text("cp").Text(ctx.Config().CpPreserveSymlinksFlags())
-				if preserveTimestamps {
-					cmd.Flag("-p")
+				if useHardlinks {
+					// Source files can live on a different filesystem from out/.
+					builder.Command().Text("ln").Flag("-f").Input(ps.srcPath).Text(destPath).
+						Text("2>/dev/null || cp").Text(ctx.Config().CpPreserveSymlinksFlags()).Flag("-p").
+						Input(ps.srcPath).Text(destPath)
+				} else {
+					cmd := builder.Command().Text("cp").Text(ctx.Config().CpPreserveSymlinksFlags())
+					if preserveTimestamps {
+						cmd.Flag("-p")
+					}
+					cmd.Input(ps.srcPath).Text(destPath)
 				}
-				cmd.Input(ps.srcPath).Text(destPath)
 			} else {
 				builder.Command().Textf("ln -sf %s %s", ps.symlinkTarget, destPath)
 			}

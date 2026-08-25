@@ -18,6 +18,7 @@ import (
 	"android/soong/android"
 	"android/soong/filesystem"
 	"strconv"
+	"strings"
 
 	"github.com/google/blueprint/proptools"
 )
@@ -171,12 +172,27 @@ func (f *filesystemCreator) createVbmetaPartitions(ctx android.LoadHookContext, 
 		ri = &parsedRi
 	}
 
+	var flags *int64
+	avbArgs := strings.Fields(ctx.Config().ProductVariables().BoardAvbMakeVbmetaImageArgs)
+	for i := 0; i+1 < len(avbArgs); i++ {
+		if avbArgs[i] != "--flags" {
+			continue
+		}
+		parsedFlags, err := strconv.ParseInt(avbArgs[i+1], 0, 64)
+		if err != nil {
+			ctx.ModuleErrorf("VBMETA flags must be an int, got %q", avbArgs[i+1])
+			break
+		}
+		flags = &parsedFlags
+		break
+	}
+
 	// --chain_partition argument is only set for partitions that set
-	// `BOARD_AVB_<partition name>_KEY_PATH` value and is not "recovery"
+	// `BOARD_AVB_<partition name>_KEY_PATH` value.
 	// https://cs.android.com/android/platform/superproject/main/+/main:build/make/core/Makefile;l=4823;drc=62e20f0d218f60bae563b4ee742d88cca1fc1901
 	includeAsChainedPartitionInVbmeta := func(partition string) bool {
 		val, ok := partitionVars.PartitionQualifiedVariables[partition]
-		return ok && len(val.BoardAvbKeyPath) > 0 && partition != "recovery"
+		return ok && len(val.BoardAvbKeyPath) > 0
 	}
 
 	// --include_descriptors_from_image is passed if both conditions are met:
@@ -291,6 +307,7 @@ func (f *filesystemCreator) createVbmetaPartitions(ctx android.LoadHookContext, 
 			Algorithm:          algorithm,
 			Private_key:        key,
 			Rollback_index:     ri,
+			Flags:              flags,
 			Chained_partitions: chainedPartitionModules,
 			Partitions:         proptools.NewSimpleConfigurable(includePartitionModules),
 			Partition_name:     proptools.StringPtr("vbmeta"),

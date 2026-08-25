@@ -26,6 +26,7 @@ import (
 	"android/soong/filesystem"
 	"android/soong/genrule"
 	"android/soong/kernel"
+	"android/soong/phony"
 
 	"github.com/google/blueprint"
 	"github.com/google/blueprint/parser"
@@ -418,6 +419,78 @@ func (f *filesystemCreator) createInternalModules(ctx android.LoadHookContext) {
 
 	ctx.Config().Get(fsGenStateOnceKey).(*FsGenState).soongGeneratedPartitions = partitions
 	f.createDeviceModule(ctx, validPartitions, f.properties.Vbmeta_module_names, superImageSubpartitions)
+	f.createSoongOnlyImageAliases(ctx, validPartitions, dtbImg)
+}
+
+// Make's image goals are not available when Kati is skipped. Keep those familiar
+// goal names available in Soong-only builds by pointing them at the generated
+// image modules.
+func (f *filesystemCreator) createSoongOnlyImageAliases(ctx android.LoadHookContext, partitions allGeneratedPartitionData, dtbImg dtbImg) {
+	if ctx.Config().KatiEnabled() {
+		return
+	}
+
+	addAlias := func(alias, module string) {
+		module = strings.TrimPrefix(module, ":")
+		if module == "" {
+			return
+		}
+		ctx.CreateModuleInDirectory(
+			phony.PhonyFactory,
+			".",
+			&struct {
+				Name     *string
+				Required []string
+			}{
+				Name:     proptools.StringPtr(alias),
+				Required: []string{module},
+			},
+		)
+	}
+
+	for _, image := range []struct {
+		alias    string
+		typeName string
+	}{
+		{"systemimage", "system"},
+		{"systemextimage", "system_ext"},
+		{"productimage", "product"},
+		{"vendorimage", "vendor"},
+		{"odmimage", "odm"},
+		{"system_dlkmimage", "system_dlkm"},
+		{"vendor_dlkmimage", "vendor_dlkm"},
+		{"odm_dlkmimage", "odm_dlkm"},
+		{"recoveryimage", "recovery"},
+		{"userdataimage", "userdata"},
+	} {
+		addAlias(image.alias, partitions.nameForType(image.typeName))
+	}
+
+	addAlias("bootimage", f.properties.Boot_image)
+	addAlias("initbootimage", f.properties.Init_boot_image)
+	addAlias("vendorbootimage", f.properties.Vendor_boot_image)
+	addAlias("vendorkernelbootimage", f.properties.Vendor_kernel_boot_image)
+	addAlias("vendorbootimage_debug", f.properties.Vendor_boot_debug_image)
+	addAlias("vendorbootimage_test_harness", f.properties.Vendor_boot_test_harness_image)
+	addAlias("superimage", f.properties.Super_image)
+	for i, partition := range f.properties.Vbmeta_partition_names {
+		if i >= len(f.properties.Vbmeta_module_names) {
+			break
+		}
+		switch partition {
+		case "vbmeta":
+			addAlias("vbmetaimage", f.properties.Vbmeta_module_names[i])
+		case "vbmeta_system":
+			addAlias("vbmetasystemimage", f.properties.Vbmeta_module_names[i])
+		case "vbmeta_vendor":
+			addAlias("vbmetavendorimage", f.properties.Vbmeta_module_names[i])
+		}
+	}
+
+	if dtbImg.include {
+		addAlias("dtbimage", dtbImg.name)
+	}
+	addAlias("dtboimage", getDtboModuleName(ctx))
 }
 
 func generatedModuleName(cfg android.Config, suffix string) string {

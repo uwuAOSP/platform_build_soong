@@ -534,6 +534,8 @@ type ProductVariables struct {
 
 	BoardAvbEnable                         *bool    `json:",omitempty"`
 	BoardAvbSystemAddHashtreeFooterArgs    []string `json:",omitempty"`
+	BoardAvbMakeVbmetaImageArgs            string   `json:",omitempty"`
+	BoardUsesSoongKernel                   bool     `json:",omitempty"`
 	DeviceFrameworkCompatibilityMatrixFile []string `json:",omitempty"`
 	DeviceProductCompatibilityMatrixFile   []string `json:",omitempty"`
 
@@ -664,6 +666,7 @@ type PartitionVariables struct {
 	BoardPrebuiltInitBootimage        string   `json:",omitempty"`
 	BoardBootimagePartitionSize       string   `json:",omitempty"`
 	BoardVendorBootimagePartitionSize string   `json:",omitempty"`
+	BoardKernelPagesize               string   `json:",omitempty"`
 	BoardInitBootimagePartitionSize   string   `json:",omitempty"`
 	BoardBootHeaderVersion            string   `json:",omitempty"`
 	BoardInitBootHeaderVersion        string   `json:",omitempty"`

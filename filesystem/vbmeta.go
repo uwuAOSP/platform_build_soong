@@ -78,6 +78,9 @@ type VbmetaProperties struct {
 	// Rollback index location of this vbmeta image. Must be 0, 1, 2, etc. Default is 0.
 	Rollback_index_location *int64
 
+	// Flags passed to avbtool make_vbmeta_image.
+	Flags *int64
+
 	// List of filesystem modules that this vbmeta has descriptors for. The filesystem modules
 	// have to be signed (use_avb: true).
 	Partitions proptools.Configurable[[]string]
@@ -226,6 +229,9 @@ func (v *vbmeta) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 
 	algorithm := proptools.StringDefault(v.properties.Algorithm, "SHA256_RSA4096")
 	cmd.FlagWithArg("--algorithm ", algorithm)
+	if v.properties.Flags != nil {
+		cmd.FlagWithArg("--flags ", strconv.FormatInt(*v.properties.Flags, 10))
+	}
 
 	cmd.FlagWithArg("--padding_size ", "4096")
 
@@ -236,7 +242,7 @@ func (v *vbmeta) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 		return
 	}
 
-	if v.partitionName() == "vbmeta" && ctx.Config().Eng() {
+	if v.properties.Flags == nil && v.partitionName() == "vbmeta" && ctx.Config().Eng() {
 		// https://source.corp.google.com/h/googleplex-android/platform/build/+/0cf7c289634e9aad9720cb45bb42ad0d338f7802:core/Makefile;l=5057-5060;drc=0e426f646784e2d233098f6aa0f7444070b1049f;bpv=1;bpt=0
 		cmd.Flag("--set_hashtree_disabled_flag")
 	}

@@ -34,9 +34,11 @@ func createSuperImage(
 	systemOtherImageName string,
 ) []string {
 	baseProps := &struct {
-		Name *string
+		Name       *string
+		Visibility []string
 	}{
-		Name: proptools.StringPtr(generatedModuleNameForPartition(ctx.Config(), "super")),
+		Name:       proptools.StringPtr(generatedModuleNameForPartition(ctx.Config(), "super")),
+		Visibility: []string{"//visibility:public"},
 	}
 
 	superImageProps := &filesystem.SuperImageProperties{

@@ -33,10 +33,14 @@ type prebuiltDtboImg struct {
 }
 
 type prebuiltDtboImgProperties struct {
-	Src            *string `android:"path"`
-	Partition_size *int64
-	Stem           *string
-	Use_avb        *bool
+	Src                         *string `android:"path"`
+	Partition_size              *int64
+	Stem                        *string
+	Use_avb                     *bool
+	Avb_private_key             *string `android:"path"`
+	Avb_algorithm               *string
+	Avb_rollback_index          *int64
+	Avb_rollback_index_location *int64
 }
 
 func PrebuiltDtboImgFactory() android.Module {
@@ -64,10 +68,22 @@ func (p *prebuiltDtboImg) GenerateAndroidBuildActions(ctx android.ModuleContext)
 			PropFileForMiscInfo: p.buildPropFileForMiscInfo(ctx),
 		},
 	)
-	android.SetProvider(ctx, vbmetaPartitionProvider, vbmetaPartitionInfo{
-		Name:   "dtbo",
-		Output: output,
-	})
+	info := vbmetaPartitionInfo{
+		Name:                  "dtbo",
+		Output:                output,
+		RollbackIndexLocation: proptools.IntDefault(p.properties.Avb_rollback_index_location, 0),
+	}
+	if p.properties.Avb_private_key != nil {
+		key := android.PathForModuleSrc(ctx, proptools.String(p.properties.Avb_private_key))
+		publicKey := android.PathForModuleOut(ctx, "dtbo.avbpubkey")
+		ctx.Build(pctx, android.BuildParams{
+			Rule:   extractPublicKeyRule,
+			Input:  key,
+			Output: publicKey,
+		})
+		info.PublicKey = publicKey
+	}
+	android.SetProvider(ctx, vbmetaPartitionProvider, info)
 }
 
 func (p *prebuiltDtboImg) avbAddHash(ctx android.ModuleContext, input android.Path) android.Path {
@@ -93,6 +109,18 @@ func (p *prebuiltDtboImg) avbAddHash(ctx android.ModuleContext, input android.Pa
 	} else {
 		cmd.FlagWithArg("--partition_size ", strconv.FormatInt(*p.properties.Partition_size, 10))
 	}
+	if p.properties.Avb_algorithm != nil {
+		cmd.FlagWithArg("--algorithm ", proptools.String(p.properties.Avb_algorithm))
+	}
+	if p.properties.Avb_private_key != nil {
+		cmd.FlagWithInput("--key ", android.PathForModuleSrc(ctx, proptools.String(p.properties.Avb_private_key)))
+	}
+	if p.properties.Avb_rollback_index != nil {
+		cmd.FlagWithArg("--rollback_index ", strconv.FormatInt(*p.properties.Avb_rollback_index, 10))
+	}
+	if p.properties.Avb_rollback_index_location != nil {
+		cmd.FlagWithArg("--rollback_index_location ", strconv.FormatInt(*p.properties.Avb_rollback_index_location, 10))
+	}
 	fingerprintFile := ctx.Config().BuildFingerprintFile(ctx)
 	cmd.FlagWithArg("--prop ", fmt.Sprintf("com.android.build.dtbo.fingerprint:$(cat %s)", fingerprintFile.String())).Implicit(fingerprintFile)
 
@@ -112,7 +140,20 @@ func (p *prebuiltDtboImg) buildPropFileForMiscInfo(ctx android.ModuleContext) an
 		addStr("dtbo_size", strconv.FormatInt(*p.properties.Partition_size, 10))
 	}
 	fingerprintFile := ctx.Config().BuildFingerprintFile(ctx)
-	addStr("avb_dtbo_add_hash_footer_args", "--prop "+fmt.Sprintf("com.android.build.dtbo.fingerprint:{CONTENTS_OF:%s}", fingerprintFile.String()))
+	footerArgs := "--prop " + fmt.Sprintf("com.android.build.dtbo.fingerprint:{CONTENTS_OF:%s}", fingerprintFile.String())
+	if p.properties.Avb_rollback_index != nil {
+		footerArgs += " --rollback_index " + strconv.FormatInt(*p.properties.Avb_rollback_index, 10)
+	}
+	addStr("avb_dtbo_add_hash_footer_args", footerArgs)
+	if p.properties.Avb_algorithm != nil {
+		addStr("avb_dtbo_algorithm", proptools.String(p.properties.Avb_algorithm))
+	}
+	if p.properties.Avb_private_key != nil {
+		addStr("avb_dtbo_key_path", proptools.String(p.properties.Avb_private_key))
+	}
+	if p.properties.Avb_rollback_index_location != nil {
+		addStr("avb_dtbo_rollback_index_location", strconv.FormatInt(*p.properties.Avb_rollback_index_location, 10))
+	}
 
 	propFilePreProcessing := android.PathForModuleOut(ctx, "prop_for_misc_info_pre_processing")
 	android.WriteFileRuleVerbatim(ctx, propFilePreProcessing, sb.String())

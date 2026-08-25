@@ -56,6 +56,9 @@ type BootimgProperties struct {
 	// Path to the device tree blob (DTB) prebuilt file to add to this boot image
 	Dtb_prebuilt *string `android:"arch_variant,path"`
 
+	// Module that provides the device tree blob through the .dtb output tag.
+	Dtb_module *string
+
 	// Optional kernel commandline arguments
 	Cmdline []string `android:"arch_variant"`
 
@@ -391,6 +394,9 @@ func (b *bootimg) buildBootImage(ctx android.ModuleContext, kernel android.Path)
 
 	if b.getDtbPath(ctx) != nil {
 		cmd.FlagWithInput("--dtb ", b.getDtbPath(ctx))
+	}
+	if pageSize := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardKernelPagesize; pageSize != "" {
+		cmd.FlagWithArg("--pagesize ", pageSize)
 	}
 
 	cmdline := strings.Join(b.properties.Cmdline, " ")

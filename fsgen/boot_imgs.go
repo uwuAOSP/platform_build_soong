@@ -64,6 +64,15 @@ func createBootImageCommon(ctx android.LoadHookContext, kernelPath string, prebu
 		return true
 	}
 
+	var dtbPrebuilt, dtbModule *string
+	if dtbImg.include && dtbImg.imgType == "boot" {
+		if strings.HasPrefix(dtbImg.name, ":") {
+			dtbModule = proptools.StringPtr(dtbImg.name)
+		} else {
+			dtbPrebuilt = proptools.StringPtr(":" + dtbImg.name)
+		}
+	}
+
 	if kernelPath == "" {
 		// There are potentially code paths that don't use `PRODUCT_COPY_FILES` to copy the kernel to
 		// ANDROID_PRODUCT_OUT
@@ -92,11 +101,6 @@ func createBootImageCommon(ctx android.LoadHookContext, kernelPath string, prebu
 		kernelModule = ":" + kernelFilegroupName
 	}
 
-	var dtbPrebuilt *string
-	if dtbImg.include && dtbImg.imgType == "boot" {
-		dtbPrebuilt = proptools.StringPtr(":" + dtbImg.name)
-	}
-
 	var cmdline []string
 	if !buildingVendorBootImage(partitionVariables) {
 		cmdline = partitionVariables.InternalKernelCmdline
@@ -107,6 +111,7 @@ func createBootImageCommon(ctx android.LoadHookContext, kernelPath string, prebu
 		&filesystem.BootimgProperties{
 			Kernel_prebuilt: proptools.NewSimpleConfigurable(kernelModule),
 			Dtb_prebuilt:    dtbPrebuilt,
+			Dtb_module:      dtbModule,
 			Cmdline:         cmdline,
 			Stem:            stem,
 			Ramdisk_module: func() *string {
@@ -124,9 +129,9 @@ func createBootImageCommon(ctx android.LoadHookContext, kernelPath string, prebu
 			Use_avb:                     avbInfo.avbEnable,
 			Avb_mode:                    avbInfo.avbMode,
 			Avb_private_key:             avbInfo.avbkeyFilegroup,
+			Avb_algorithm:               avbInfo.avbAlgorithm,
 			Avb_rollback_index:          avbInfo.avbRollbackIndex,
 			Avb_rollback_index_location: avbInfo.avbRollbackIndexLocation,
-			Avb_algorithm:               avbInfo.avbAlgorithm,
 			Security_patch:              securityPatch,
 		},
 		&struct {
@@ -176,10 +181,7 @@ func createVendorBootImage(ctx android.LoadHookContext, dtbImg dtbImg) (bool, []
 
 	avbInfo := getAvbInfo(ctx.Config(), "vendor_boot")
 
-	var dtbPrebuilt *string
-	if dtbImg.include && dtbImg.imgType == "vendor_boot" {
-		dtbPrebuilt = proptools.StringPtr(":" + dtbImg.name)
-	}
+	dtbPrebuilt, dtbModule := dtbProperties(dtbImg, "vendor_boot")
 
 	cmdline := partitionVariables.InternalKernelCmdline
 
@@ -204,6 +206,7 @@ func createVendorBootImage(ctx android.LoadHookContext, dtbImg dtbImg) (bool, []
 			Ramdisk_module:           proptools.StringPtr(generatedModuleNameForPartition(ctx.Config(), "vendor_ramdisk")),
 			Ramdisk_fragment_modules: ramdiskFragmentModules,
 			Dtb_prebuilt:             dtbPrebuilt,
+			Dtb_module:               dtbModule,
 			Cmdline:                  cmdline,
 			Bootconfig:               vendorBootConfigImg,
 			Stem:                     proptools.StringPtr("vendor_boot.img"),
@@ -216,6 +219,7 @@ func createVendorBootImage(ctx android.LoadHookContext, dtbImg dtbImg) (bool, []
 			Use_avb:                     avbInfo.avbEnable,
 			Avb_mode:                    avbInfo.avbMode,
 			Avb_private_key:             avbInfo.avbkeyFilegroup,
+			Avb_algorithm:               avbInfo.avbAlgorithm,
 			Avb_rollback_index:          avbInfo.avbRollbackIndex,
 			Avb_rollback_index_location: avbInfo.avbRollbackIndexLocation,
 		},
@@ -239,10 +243,7 @@ func createVendorBootDebugImage(ctx android.LoadHookContext, dtbImg dtbImg, ramd
 
 	avbInfo := getAvbInfo(ctx.Config(), "vendor_boot")
 
-	var dtbPrebuilt *string
-	if dtbImg.include && dtbImg.imgType == "vendor_boot" {
-		dtbPrebuilt = proptools.StringPtr(":" + dtbImg.name)
-	}
+	dtbPrebuilt, dtbModule := dtbProperties(dtbImg, "vendor_boot")
 
 	cmdline := partitionVariables.InternalKernelCmdline
 
@@ -259,6 +260,7 @@ func createVendorBootDebugImage(ctx android.LoadHookContext, dtbImg dtbImg, ramd
 			Ramdisk_module:           proptools.StringPtr(generatedModuleNameForPartition(ctx.Config(), "vendor_ramdisk-debug")),
 			Ramdisk_fragment_modules: ramdiskFragmentModules,
 			Dtb_prebuilt:             dtbPrebuilt,
+			Dtb_module:               dtbModule,
 			Cmdline:                  cmdline,
 			Bootconfig:               vendorBootConfigImg,
 			Stem:                     proptools.StringPtr("vendor_boot-debug.img"),
@@ -271,6 +273,7 @@ func createVendorBootDebugImage(ctx android.LoadHookContext, dtbImg dtbImg, ramd
 			Use_avb:                     avbInfo.avbEnable,
 			Avb_mode:                    avbInfo.avbMode,
 			Avb_private_key:             avbInfo.avbkeyFilegroup,
+			Avb_algorithm:               avbInfo.avbAlgorithm,
 			Avb_rollback_index:          avbInfo.avbRollbackIndex,
 			Avb_rollback_index_location: avbInfo.avbRollbackIndexLocation,
 		},
@@ -294,10 +297,7 @@ func createVendorBootTestHarnessImage(ctx android.LoadHookContext, dtbImg dtbImg
 
 	avbInfo := getAvbInfo(ctx.Config(), "vendor_boot")
 
-	var dtbPrebuilt *string
-	if dtbImg.include && dtbImg.imgType == "vendor_boot" {
-		dtbPrebuilt = proptools.StringPtr(":" + dtbImg.name)
-	}
+	dtbPrebuilt, dtbModule := dtbProperties(dtbImg, "vendor_boot")
 
 	cmdline := partitionVariables.InternalKernelCmdline
 
@@ -314,6 +314,7 @@ func createVendorBootTestHarnessImage(ctx android.LoadHookContext, dtbImg dtbImg
 			Ramdisk_module:           proptools.StringPtr(generatedModuleNameForPartition(ctx.Config(), "vendor_ramdisk-test-harness")),
 			Ramdisk_fragment_modules: ramdiskFragmentModules,
 			Dtb_prebuilt:             dtbPrebuilt,
+			Dtb_module:               dtbModule,
 			Cmdline:                  cmdline,
 			Bootconfig:               vendorBootConfigImg,
 			Stem:                     proptools.StringPtr("vendor_boot-test-harness.img"),
@@ -326,6 +327,7 @@ func createVendorBootTestHarnessImage(ctx android.LoadHookContext, dtbImg dtbImg
 			Use_avb:                     avbInfo.avbEnable,
 			Avb_mode:                    avbInfo.avbMode,
 			Avb_private_key:             avbInfo.avbkeyFilegroup,
+			Avb_algorithm:               avbInfo.avbAlgorithm,
 			Avb_rollback_index:          avbInfo.avbRollbackIndex,
 			Avb_rollback_index_location: avbInfo.avbRollbackIndexLocation,
 		},
@@ -351,10 +353,7 @@ func createVendorKernelBootImage(ctx android.LoadHookContext, dtbImg dtbImg) boo
 
 	avbInfo := getAvbInfo(ctx.Config(), "vendor_kernel_boot")
 
-	var dtbPrebuilt *string
-	if dtbImg.include && dtbImg.imgType == "vendor_kernel_boot" {
-		dtbPrebuilt = proptools.StringPtr(":" + dtbImg.name)
-	}
+	dtbPrebuilt, dtbModule := dtbProperties(dtbImg, "vendor_kernel_boot")
 
 	partitionSize := getPartitionSizeFromString(ctx, vendorKernelBootVariables.BoardPartitionSize, "BOARD_VENDOR_KERNEL_BOOTIMAGE_PARTITION_SIZE")
 
@@ -363,6 +362,7 @@ func createVendorKernelBootImage(ctx android.LoadHookContext, dtbImg dtbImg) boo
 		&filesystem.BootimgProperties{
 			Ramdisk_module: proptools.StringPtr(generatedModuleNameForPartition(ctx.Config(), "vendor_kernel_ramdisk")),
 			Dtb_prebuilt:   dtbPrebuilt,
+			Dtb_module:     dtbModule,
 			Stem:           proptools.StringPtr("vendor_kernel_boot.img"),
 		},
 		&filesystem.CommonBootimgProperties{
@@ -373,6 +373,7 @@ func createVendorKernelBootImage(ctx android.LoadHookContext, dtbImg dtbImg) boo
 			Use_avb:                     avbInfo.avbEnable,
 			Avb_mode:                    avbInfo.avbMode,
 			Avb_private_key:             avbInfo.avbkeyFilegroup,
+			Avb_algorithm:               avbInfo.avbAlgorithm,
 			Avb_rollback_index:          avbInfo.avbRollbackIndex,
 			Avb_rollback_index_location: avbInfo.avbRollbackIndexLocation,
 		},
@@ -529,6 +530,16 @@ type dtbImg struct {
 	imgType string
 }
 
+func dtbProperties(img dtbImg, imageType string) (*string, *string) {
+	if !img.include || img.imgType != imageType {
+		return nil, nil
+	}
+	if strings.HasPrefix(img.name, ":") {
+		return nil, proptools.StringPtr(img.name)
+	}
+	return proptools.StringPtr(":" + img.name), nil
+}
+
 func createDtbImgFilegroup(ctx android.LoadHookContext) dtbImg {
 	partitionVars := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse
 	if !partitionVars.BoardIncludeDtbInBootimg {
@@ -544,6 +555,9 @@ func createDtbImgFilegroup(ctx android.LoadHookContext) dtbImg {
 		// If we have vendor_kernel_boot partition, we migrate dtb image to that image
 		// and allow dtb in vendor_boot to be empty.
 		imgType = "vendor_kernel_boot"
+	}
+	if kernel := soongKernelModule(ctx); kernel != "" {
+		return dtbImg{include: true, name: kernel, imgType: imgType}
 	}
 	if partitionVars.BoardPrebuiltDtbDir != "" {
 		// https://cs.android.com/android/platform/superproject/main/+/main:build/make/core/Makefile;l=1019-1022?q=BOARD_PREBUILT_DTBIMAGE_DIR&ss=android%2Fplatform%2Fsuperproject%2Fmaini
@@ -630,6 +644,7 @@ func createPrebuiltDtboImages(ctx android.LoadHookContext) (string, string) {
 
 	if dtboModuleName != "" {
 		size, _ := strconv.ParseInt(partitionVars.BoardDtboPartitionSize, 0, 64)
+		avbInfo := getAvbInfo(ctx.Config(), "dtbo")
 		src := partitionVars.BoardPrebuiltDtboImage
 		if kernel := soongKernelModule(ctx); src == "" && kernel != "" {
 			src = kernel + "{.dtbo}"
@@ -638,13 +653,23 @@ func createPrebuiltDtboImages(ctx android.LoadHookContext) (string, string) {
 			filesystem.PrebuiltDtboImgFactory,
 			".",
 			&struct {
-				Name           *string
-				Src            *string
-				Partition_size *int64
+				Name                        *string
+				Src                         *string
+				Partition_size              *int64
+				Use_avb                     *bool
+				Avb_private_key             *string
+				Avb_algorithm               *string
+				Avb_rollback_index          *int64
+				Avb_rollback_index_location *int64
 			}{
-				Name:           proptools.StringPtr(dtboModuleName),
-				Src:            proptools.StringPtr(src),
-				Partition_size: proptools.Int64Ptr(size),
+				Name:                        proptools.StringPtr(dtboModuleName),
+				Src:                         proptools.StringPtr(src),
+				Partition_size:              proptools.Int64Ptr(size),
+				Use_avb:                     avbInfo.avbEnable,
+				Avb_private_key:             avbInfo.avbkeyFilegroup,
+				Avb_algorithm:               avbInfo.avbAlgorithm,
+				Avb_rollback_index:          avbInfo.avbRollbackIndex,
+				Avb_rollback_index_location: avbInfo.avbRollbackIndexLocation,
 			},
 		)
 	}
