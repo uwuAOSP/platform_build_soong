@@ -67,7 +67,7 @@ func createBootImageCommon(ctx android.LoadHookContext, kernelPath string, prebu
 	var dtbPrebuilt, dtbModule *string
 	if dtbImg.include && dtbImg.imgType == "boot" {
 		if strings.HasPrefix(dtbImg.name, ":") {
-			dtbModule = proptools.StringPtr(dtbImg.name)
+			dtbPrebuilt = proptools.StringPtr(dtbImg.name + "{.dtb}")
 		} else {
 			dtbPrebuilt = proptools.StringPtr(":" + dtbImg.name)
 		}
@@ -535,7 +535,7 @@ func dtbProperties(img dtbImg, imageType string) (*string, *string) {
 		return nil, nil
 	}
 	if strings.HasPrefix(img.name, ":") {
-		return nil, proptools.StringPtr(img.name)
+		return proptools.StringPtr(img.name + "{.dtb}"), nil
 	}
 	return proptools.StringPtr(":" + img.name), nil
 }
