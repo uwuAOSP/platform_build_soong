@@ -1523,8 +1523,6 @@ func (c *configImpl) SetSkipNinja(v bool) {
 func (c *configImpl) SetUniPrepareMode() {
 	c.uniPrepareMode = true
 	c.skipNinja = true
-	c.incrementalBuildActions = false
-	c.incrementalBuildActionsSetInEnv = true
 }
 
 func (c *configImpl) UniPrepareMode() bool {
@@ -1670,6 +1668,13 @@ func (c *configImpl) UniR8Parallel() int {
 	}
 	if c.UseRemoteBuild() && c.RemoteParallel() > 0 {
 		return c.RemoteParallel()
+	}
+	return c.Parallel()
+}
+
+func (c *configImpl) UniRustParallel() int {
+	if parallel, ok := c.environ.GetInt("NINJA_UNI_RUST_NUM_JOBS"); ok {
+		return max(1, parallel)
 	}
 	return c.Parallel()
 }
