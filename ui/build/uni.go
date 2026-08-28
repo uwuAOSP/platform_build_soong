@@ -58,6 +58,7 @@ type uniState struct {
 	AllModules        []string       `json:"all_modules"`
 	R8Modules         []string       `json:"r8_modules"`
 	R8ModulesReady    bool           `json:"r8_modules_ready"`
+	TaskMetadata      string         `json:"task_metadata,omitempty"`
 	Dist              bool           `json:"dist"`
 	GraphFingerprint  string         `json:"graph_fingerprint"`
 	GraphFiles        []uniGraphFile `json:"graph_files"`
@@ -129,6 +130,30 @@ func collectUniGraphFiles(soongNinja string, paths ...string) ([]uniGraphFile, s
 	graphPaths = append(graphPaths, shards...)
 	graphPaths = append(graphPaths, paths...)
 	return statUniGraphFiles(graphPaths...)
+}
+
+func fingerprintUniGraphFilesWithMutableDate(current, expected []uniGraphFile, mutablePath string) (string, error) {
+	if len(current) != len(expected) {
+		return "", nil
+	}
+	hash := sha256.New()
+	for index, file := range current {
+		if filepath.Clean(file.Path) != filepath.Clean(expected[index].Path) {
+			return "", nil
+		}
+		info, err := os.Stat(file.Path)
+		if err != nil {
+			return "", err
+		}
+		size := info.Size()
+		modTime := info.ModTime().UnixNano()
+		if filepath.Clean(file.Path) == filepath.Clean(mutablePath) {
+			size = expected[index].Size
+			modTime = expected[index].ModTimeNano
+		}
+		fmt.Fprintf(hash, "%s\x00%d\x00%d\n", file.Path, size, modTime)
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // WriteUniState records the graph identity needed by the standalone scheduler.
@@ -208,9 +233,21 @@ func WriteUniState(config Config, originalArgs []string) error {
 			r8ModulesReady = true
 		}
 	}
-	graphFiles, fingerprint, err := collectUniGraphFiles(
-		soongNinja, combinedNinja, soongVariables, katiEnvironment, katiBuildNinja, katiPackageNinja,
-		allModulesPath, buildDateTimeFile)
+	taskMetadata := ""
+	if taskMetadataPath, ok := config.Environment().Get("UNI_TASK_METADATA_FILE"); ok && taskMetadataPath != "" {
+		taskMetadata, err = absolutePath(taskMetadataPath)
+		if err != nil {
+			return err
+		}
+	}
+	graphPaths := []string{
+		combinedNinja, soongVariables, katiEnvironment, katiBuildNinja, katiPackageNinja,
+		allModulesPath, buildDateTimeFile,
+	}
+	if taskMetadata != "" {
+		graphPaths = append(graphPaths, taskMetadata)
+	}
+	graphFiles, fingerprint, err := collectUniGraphFiles(soongNinja, graphPaths...)
 	if err != nil {
 		return fmt.Errorf("stat build graph: %w", err)
 	}
@@ -241,6 +278,7 @@ func WriteUniState(config Config, originalArgs []string) error {
 		AllModules:        allModules,
 		R8Modules:         r8Modules,
 		R8ModulesReady:    r8ModulesReady,
+		TaskMetadata:      taskMetadata,
 		Dist:              config.Dist(),
 		GraphFingerprint:  fingerprint,
 		GraphFiles:        graphFiles,
@@ -308,15 +346,26 @@ func LoadUniState(config Config) error {
 	if filepath.Clean(state.OutDir) != filepath.Clean(outDir) {
 		return fmt.Errorf("uni output directory changed")
 	}
-	_, fingerprint, err := collectUniGraphFiles(
-		state.SoongNinja, state.CombinedNinja, state.SoongVariables, state.KatiEnvironment,
+	graphPaths := []string{
+		state.CombinedNinja, state.SoongVariables, state.KatiEnvironment,
 		state.KatiBuildNinja, state.KatiPackageNinja,
-		filepath.Join(state.ProductOut, "all_modules.txt"), state.BuildDateTimeFile)
+		filepath.Join(state.ProductOut, "all_modules.txt"), state.BuildDateTimeFile,
+	}
+	if state.TaskMetadata != "" {
+		graphPaths = append(graphPaths, state.TaskMetadata)
+	}
+	currentFiles, fingerprint, err := collectUniGraphFiles(state.SoongNinja, graphPaths...)
 	if err != nil {
 		return err
 	}
 	if fingerprint != state.GraphFingerprint {
-		return fmt.Errorf("uni build graph changed")
+		fingerprint, err = fingerprintUniGraphFilesWithMutableDate(currentFiles, state.GraphFiles, state.BuildDateTimeFile)
+		if err != nil {
+			return err
+		}
+		if fingerprint != state.GraphFingerprint {
+			return fmt.Errorf("uni build graph changed")
+		}
 	}
 	config.SetTargetDevice(state.TargetDevice)
 	config.SetKatiSuffix(state.KatiSuffix)
