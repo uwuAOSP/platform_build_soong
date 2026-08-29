@@ -15,6 +15,7 @@
 package build
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,14 +23,41 @@ import (
 	"testing"
 )
 
-func TestUniPrepareDisablesIncrementalAnalysis(t *testing.T) {
+func TestUniStateProtocolFixture(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "uni_state_v7.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state uniState
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.Version != uniStateVersion {
+		t.Fatalf("fixture version = %d, want %d", state.Version, uniStateVersion)
+	}
+	if !state.SkipKatiNinja {
+		t.Fatal("fixture lost SkipKatiNinja")
+	}
+	if state.TaskMetadata == "" {
+		t.Fatal("fixture lost task metadata path")
+	}
+	roundTrip, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(roundTrip), "\"skip_kati_ninja\":true") {
+		t.Fatal("Soong serialization lost SkipKatiNinja")
+	}
+}
+
+func TestUniPrepareKeepsIncrementalAnalysis(t *testing.T) {
 	config := Config{&configImpl{incrementalBuildActions: true}}
 	config.SetUniPrepareMode()
-	if config.incrementalBuildActions {
-		t.Fatal("uni prepare must not restore incremental analysis state")
+	if !config.incrementalBuildActions {
+		t.Fatal("uni prepare must keep incremental analysis enabled")
 	}
-	if !config.incrementalBuildActionsSetInEnv {
-		t.Fatal("release configuration may re-enable incremental analysis")
+	if config.incrementalBuildActionsSetInEnv {
+		t.Fatal("uni prepare must not force an environment override")
 	}
 }
 
@@ -137,11 +165,55 @@ func TestCollectUniGraphFilesIncludesAdditionalFiles(t *testing.T) {
 	}
 }
 
+func TestFingerprintUniGraphFilesAllowsBuildDateChange(t *testing.T) {
+	directory := t.TempDir()
+	root := filepath.Join(directory, "build.product.ninja")
+	date := filepath.Join(directory, "build_date.txt")
+	for path, data := range map[string]string{root: "rule noop\n", date: "old\n"} {
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expected, fingerprint, err := collectUniGraphFiles(root, date)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(date, []byte("new\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err := collectUniGraphFiles(root, date)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := fingerprintUniGraphFilesWithMutableDate(current, expected, date)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != fingerprint {
+		t.Fatalf("build date update changed fingerprint: got %q want %q", got, fingerprint)
+	}
+	if err := os.WriteFile(root, []byte("changed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = collectUniGraphFiles(root, date)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = fingerprintUniGraphFilesWithMutableDate(current, expected, date)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == fingerprint {
+		t.Fatal("graph change was accepted with mutable build date")
+	}
+}
+
 func TestUniCombinedNinjaUpdatesR8Pool(t *testing.T) {
 	directory := t.TempDir()
 	env := Environment([]string{
 		"OUT_DIR=" + directory,
 		"NINJA_UNI_R8_NUM_JOBS=7",
+		"NINJA_UNI_RUST_NUM_JOBS=5",
 		"NINJA_UNI_JAVA_NUM_JOBS=11",
 		"NINJA_UNI_KOTLIN_NUM_JOBS=6",
 	})
@@ -160,6 +232,9 @@ func TestUniCombinedNinjaUpdatesR8Pool(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "pool uni_r8_pool\n depth = 7\n") {
 		t.Fatalf("missing R8 pool depth: %s", data)
+	}
+	if !strings.Contains(string(data), "pool uni_rust_pool\n depth = 5\n") {
+		t.Fatalf("missing Rust pool depth: %s", data)
 	}
 	if !strings.Contains(string(data), "pool uni_java_pool\n depth = 11\n") {
 		t.Fatalf("missing Java pool depth: %s", data)

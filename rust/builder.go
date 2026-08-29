@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/google/blueprint"
@@ -37,6 +38,7 @@ var (
 
 	rustc, rustcRbe = pctx.RemoteStaticRules("rustc",
 		blueprint.RuleParams{
+			Pool: android.UniRustPool,
 			Command: "$relPwd $reTemplate ${SoongEnvCmd} -i --allow PWD --allow TMPDIR $envVars ${RustcWrapper} ${rustcCmd} " +
 				"-C linker=${RustcLinkerCmd} -C link-args=\"--android-clang-bin=${config.ClangCmd} ${linkerScriptFlags}\" " +
 				"-C link-args=@${out}.clang.rsp " +
@@ -420,15 +422,27 @@ func transformSrctoCrate(ctx android.ModuleContext, main android.Path, deps Path
 	// Suppress an implicit sysroot
 	rustcFlags = append(rustcFlags, "--sysroot=/dev/null")
 
-	// Enable incremental compilation if requested by user
+	// Enable incremental compilation if requested by user. Otherwise allow
+	// development build frontends to trade cross-CGU optimization for parallel
+	// LLVM code generation without enabling the much larger incremental cache.
 	if ctx.Config().IsEnvTrue("SOONG_RUSTC_INCREMENTAL") {
 		incrementalPath := android.PathForModuleOut(ctx, "rustc").String()
 
 		rustcFlags = append(rustcFlags, "-C incremental="+incrementalPath)
-	} else if ctx.Config().Eng() {
-		rustcFlags = append(rustcFlags, "-C codegen-units=16")
 	} else {
-		rustcFlags = append(rustcFlags, "-C codegen-units=1")
+		codegenUnits := 1
+		if ctx.Config().Eng() {
+			codegenUnits = 16
+		}
+		if raw := strings.TrimSpace(ctx.Config().Getenv("SOONG_RUSTC_CODEGEN_UNITS")); raw != "" {
+			value, err := strconv.Atoi(raw)
+			if err != nil || value < 1 || value > 256 {
+				ctx.ModuleErrorf("SOONG_RUSTC_CODEGEN_UNITS must be an integer between 1 and 256")
+			} else {
+				codegenUnits = value
+			}
+		}
+		rustcFlags = append(rustcFlags, "-C codegen-units="+strconv.Itoa(codegenUnits))
 	}
 	// Disallow experimental features
 	modulePath := ctx.ModuleDir()

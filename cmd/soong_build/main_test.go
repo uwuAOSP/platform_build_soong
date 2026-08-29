@@ -15,11 +15,58 @@
 package main
 
 import (
+	"android/soong/android/allowlists"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/blueprint"
 )
+
+func TestUniTaskType(t *testing.T) {
+	tests := map[string]string{
+		"r8RE":      "r8",
+		"kotlin":    "kotlinc",
+		"javac":     "javac",
+		"rustc":     "rustc",
+		"clangTidy": "clang",
+		"ldRE":      "linker",
+		"copyNinja": "other",
+	}
+	for rule, want := range tests {
+		if got := uniTaskType(rule); got != want {
+			t.Fatalf("uniTaskType(%q) = %q, want %q", rule, got, want)
+		}
+	}
+}
+
+func TestNinjaHintWeightPrioritizesR8(t *testing.T) {
+	prioritized, weight := ninjaHintWeight(&blueprint.WeightedOutputsModuleInfo{
+		Type: "android_app", Rules: []string{"javac", "r8"},
+	}, true)
+	if !prioritized || weight != allowlists.HIGH_PRIORITIZED_WEIGHT {
+		t.Fatalf("R8 hint = prioritized:%t weight:%d", prioritized, weight)
+	}
+}
+
+func TestNinjaHintWeightDoesNotChangeNativeMakeR8Scheduling(t *testing.T) {
+	prioritized, weight := ninjaHintWeight(&blueprint.WeightedOutputsModuleInfo{
+		Type: "android_app", Rules: []string{"javac", "r8"},
+	}, false)
+	if prioritized || weight != 0 {
+		t.Fatalf("native make R8 hint = prioritized:%t weight:%d", prioritized, weight)
+	}
+}
+
+func TestNinjaHintWeightKeepsSmallModulesNormal(t *testing.T) {
+	prioritized, weight := ninjaHintWeight(&blueprint.WeightedOutputsModuleInfo{
+		Type: "java_library", Rules: []string{"javac"}, DepsCount: 2, SrcsCount: 3,
+	}, true)
+	if prioritized || weight != 0 {
+		t.Fatalf("small module hint = prioritized:%t weight:%d", prioritized, weight)
+	}
+}
 
 func TestAnalysisProgress(t *testing.T) {
 	tempDir := t.TempDir()

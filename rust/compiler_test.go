@@ -62,6 +62,22 @@ func TestIncrementalRustUsesModuleOutput(t *testing.T) {
 	}
 }
 
+func TestRustCodegenUnitsEnvironmentOverride(t *testing.T) {
+	ctx := testRust(t, `
+		rust_library {
+			name: "libfoo",
+			srcs: ["foo.rs"],
+			crate_name: "foo",
+			split_all_variants: true,
+		}`, android.FixtureMergeEnv(map[string]string{"SOONG_RUSTC_CODEGEN_UNITS": "16"}))
+
+	rule := ctx.ModuleForTests(t, "libfoo", "android_arm64_armv8-a_dylib").Rule("rustc")
+	flags := rule.Args["rustcFlags"]
+	if !strings.Contains(flags, "-C codegen-units=16") {
+		t.Fatalf("Rust codegen unit override was not applied: %s", flags)
+	}
+}
+
 // Test that cfgs flags are being correctly generated.
 func TestCfgsToFlags(t *testing.T) {
 	ctx := testRust(t, `

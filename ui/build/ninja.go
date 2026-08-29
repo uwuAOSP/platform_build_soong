@@ -16,6 +16,8 @@
 package build
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,7 +36,146 @@ const (
 	ninjaEnvFileName        = "ninja.environment"
 	ninjaLogFileName        = ".ninja_log"
 	ninjaWeightListFileName = ".ninja_weight_list"
+	sisoFailedTargetsFile   = ".siso_failed_targets"
 )
+
+type sisoPriorityState struct {
+	Targets []string `json:"targets,omitempty"`
+	Failed  []string `json:"failed,omitempty"`
+}
+
+type weightedPriorityTarget struct {
+	target string
+	weight int
+}
+
+func sisoUniFastArgs(enabled bool) []string {
+	if !enabled {
+		return nil
+	}
+	return []string{
+		"--fast_nop=true",
+		"--fast_last_failure=true",
+		"--fast_exit=true",
+	}
+}
+
+func sameTargetSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	counts := make(map[string]int, len(left))
+	for _, target := range left {
+		counts[target]++
+	}
+	for _, target := range right {
+		if counts[target] == 0 {
+			return false
+		}
+		counts[target]--
+	}
+	return true
+}
+
+// prepareSisoPriorityState uses Siso's supported last-failure weighting path
+// to prioritize real outputs supplied by uni. Siso propagates that priority to
+// the outputs' dependencies while continuing to schedule the rest of the DAG.
+func readWeightedPriorityTargets(path string, limit int) ([]string, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	file, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	weights := make(map[string]int)
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		separator := strings.LastIndexByte(line, ',')
+		if separator <= 0 {
+			continue
+		}
+		target := line[:separator]
+		weight, err := strconv.Atoi(line[separator+1:])
+		if err != nil || weight <= 0 {
+			continue
+		}
+		weights[target] = max(weights[target], weight)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	weighted := make([]weightedPriorityTarget, 0, len(weights))
+	for target, weight := range weights {
+		weighted = append(weighted, weightedPriorityTarget{target: target, weight: weight})
+	}
+	sort.Slice(weighted, func(i, j int) bool {
+		if weighted[i].weight != weighted[j].weight {
+			return weighted[i].weight > weighted[j].weight
+		}
+		return weighted[i].target < weighted[j].target
+	})
+	weighted = weighted[:min(limit, len(weighted))]
+	result := make([]string, 0, len(weighted))
+	for _, candidate := range weighted {
+		result = append(result, candidate.target)
+	}
+	return result, nil
+}
+
+func prepareSisoPriorityState(stateDir string, buildTargets []string, encoded string, hints []string, limit int) (int, error) {
+	var priorityTargets []string
+	if err := json.Unmarshal([]byte(encoded), &priorityTargets); err != nil {
+		return 0, fmt.Errorf("decode uni Siso priority targets: %w", err)
+	}
+	statePath := filepath.Join(stateDir, sisoFailedTargetsFile)
+	if data, err := os.ReadFile(statePath); err == nil {
+		var previous sisoPriorityState
+		if json.Unmarshal(data, &previous) == nil && sameTargetSet(previous.Targets, buildTargets) {
+			priorityTargets = append(previous.Failed, priorityTargets...)
+		}
+	}
+	explicitCount := len(priorityTargets)
+	priorityTargets = append(priorityTargets, hints...)
+	seen := make(map[string]struct{}, len(priorityTargets))
+	prioritized := priorityTargets[:0]
+	for index, target := range priorityTargets {
+		if target == "" {
+			continue
+		}
+		if _, exists := seen[target]; exists {
+			continue
+		}
+		if index >= explicitCount && limit > 0 && len(prioritized) >= limit {
+			break
+		}
+		seen[target] = struct{}{}
+		prioritized = append(prioritized, target)
+	}
+	if len(prioritized) == 0 {
+		return 0, nil
+	}
+	data, err := json.Marshal(sisoPriorityState{
+		Targets: append([]string(nil), buildTargets...),
+		Failed:  prioritized,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if err := os.MkdirAll(stateDir, 0777); err != nil {
+		return 0, err
+	}
+	if err := os.WriteFile(statePath, data, 0666); err != nil {
+		return 0, err
+	}
+	return len(prioritized), nil
+}
 
 // Runs ninja with the arguments from the command line, as found in
 // config.NinjaArgs().
@@ -95,6 +236,22 @@ func runNinja(ctx Context, config Config, ninjaArgs []string) {
 			"--frontend_file", fifo,
 			"--local_jobs", strconv.Itoa(config.Parallel()),
 			"--log_dir", config.LogsDir(),
+		}
+		args = append(args, sisoUniFastArgs(config.UniNinjaMode())...)
+		if encoded, ok := config.Environment().Get("UNI_SISO_PRIORITY_TARGETS"); config.UniNinjaMode() && ok && encoded != "" {
+			if _, err := os.Stat(filepath.Join(config.OutDir(), ninjaLogFileName)); os.IsNotExist(err) {
+				hints, err := readWeightedPriorityTargets(filepath.Join(config.OutDir(), ninjaWeightListFileName), config.Parallel())
+				if err != nil {
+					ctx.Fatalf("Failed to read Soong priority scheduling hints: %v", err)
+				}
+				count, err := prepareSisoPriorityState(filepath.Dir(config.CombinedNinjaFile()), ninjaArgs, encoded, hints, config.Parallel())
+				if err != nil {
+					ctx.Fatalf("Failed to prepare Siso priority scheduling: %v", err)
+				}
+				if count > 0 {
+					ctx.Verbosef("prioritizing %d uni target(s) in the Siso DAG\n", count)
+				}
+			}
 		}
 		if value := config.SisoConfigDir(); value != "" {
 			value = createSisoConfigDir(ctx, config, value)
@@ -327,6 +484,9 @@ func runNinja(ctx Context, config Config, ninjaArgs []string) {
 			"CCACHE_CPP2",
 			"CCACHE_DIR",
 			"CCACHE_FILECLONE",
+
+			// Controls only nested kernel make parallelism; it does not affect outputs.
+			"UNI_KERNEL_JOBS",
 
 			// LLVM compiler wrapper options
 			"TOOLCHAIN_RUSAGE_OUTPUT",

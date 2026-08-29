@@ -796,6 +796,10 @@ func translateAndroidMkEntriesModule(ctx SingletonContext, w io.Writer, moduleIn
 
 	// Any new or special cases here need review to verify correct propagation of license information.
 	for _, entries := range entriesList {
+		// Disabled entries have no output-derived paths for provider callbacks.
+		if !entries.OutputFile.Valid() {
+			continue
+		}
 		entries.fillInEntries(ctx, mod)
 		entries.write(w)
 

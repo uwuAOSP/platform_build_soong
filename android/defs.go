@@ -201,9 +201,11 @@ var (
 	// Used for processes that need significant RAM to ensure there are not too many running in parallel.
 	highmemPool   = blueprint.NewBuiltinPool("highmem_pool")
 	uniR8Pool     = blueprint.NewBuiltinPool("uni_r8_pool")
+	uniRustPool   = blueprint.NewBuiltinPool("uni_rust_pool")
 	uniJavaPool   = blueprint.NewBuiltinPool("uni_java_pool")
 	uniKotlinPool = blueprint.NewBuiltinPool("uni_kotlin_pool")
 	UniR8Pool     = uniR8Pool
+	UniRustPool   = uniRustPool
 	UniJavaPool   = uniJavaPool
 	UniKotlinPool = uniKotlinPool
 )

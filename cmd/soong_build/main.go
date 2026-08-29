@@ -16,6 +16,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -223,6 +224,28 @@ func needToWriteNinjaHint(ctx *android.Context) bool {
 	return false
 }
 
+func ninjaHintWeight(info *blueprint.WeightedOutputsModuleInfo, prioritizeR8 bool) (prioritized bool, weight int) {
+	if prioritizeR8 {
+		for _, rule := range info.Rules {
+			switch rule {
+			case "r8", "r8RE", "d8r8", "d8r8RE", "d8Incr8", "d8Incr8RE":
+				return true, allowlists.HIGH_PRIORITIZED_WEIGHT
+			}
+		}
+	}
+	for prefix, candidateWeight := range allowlists.HugeModuleTypePrefixMap {
+		if strings.HasPrefix(info.Type, prefix) {
+			return true, candidateWeight
+		}
+	}
+	inputSize := info.DepsCount + info.SrcsCount
+	if inputSize <= allowlists.INPUT_SIZE_THRESHOLD {
+		return false, 0
+	}
+	weight = (inputSize / allowlists.INPUT_SIZE_THRESHOLD) * allowlists.DEFAULT_PRIORITIZED_WEIGHT
+	return true, min(weight, allowlists.HIGH_PRIORITIZED_WEIGHT)
+}
+
 func writeNinjaHint(ctx *android.Context) error {
 	ctx.BeginEvent("ninja_hint")
 	defer ctx.EndEvent("ninja_hint")
@@ -231,32 +254,10 @@ func writeNinjaHint(ctx *android.Context) error {
 	// real long-running jobs cannot run early.
 	// Therefore, the model should be adjusted in this case.
 	// The model should also be adjusted if there are critical false negatives.
-	predicate := func(j *blueprint.WeightedOutputsModuleInfo) (prioritized bool, weight int) {
-		prioritized = false
-		weight = 0
-		for prefix, w := range allowlists.HugeModuleTypePrefixMap {
-			if strings.HasPrefix(j.Type, prefix) {
-				prioritized = true
-				weight = w
-				return
-			}
-		}
-		input_size := j.DepsCount + j.SrcsCount
-
-		// Current threshold is an arbitrary value which only consider recall rather than accuracy.
-		if input_size > allowlists.INPUT_SIZE_THRESHOLD {
-			prioritized = true
-			weight += ((input_size) / allowlists.INPUT_SIZE_THRESHOLD) * allowlists.DEFAULT_PRIORITIZED_WEIGHT
-
-			// To prevent some modules from having too large a priority value.
-			if weight > allowlists.HIGH_PRIORITIZED_WEIGHT {
-				weight = allowlists.HIGH_PRIORITIZED_WEIGHT
-			}
-		}
-		return
-	}
-
-	outputsMap := ctx.Context.GetWeightedOutputsFromPredicate(predicate)
+	prioritizeR8 := ctx.Config().Getenv("UNI_TASK_METADATA_FILE") != ""
+	outputsMap := ctx.Context.GetWeightedOutputsFromPredicate(func(info *blueprint.WeightedOutputsModuleInfo) (bool, int) {
+		return ninjaHintWeight(info, prioritizeR8)
+	})
 	var outputBuilder strings.Builder
 	for output, weight := range outputsMap {
 		outputBuilder.WriteString(fmt.Sprintf("%s,%d\n", output, weight))
@@ -287,6 +288,91 @@ func writeUniR8Modules(ctx *android.Context, path string) error {
 		data = append(data, '\n')
 	}
 	return pathtools.WriteFileIfChanged(path, data, 0666)
+}
+
+type uniTaskAction struct {
+	Module   string   `json:"module"`
+	Rule     string   `json:"rule"`
+	TaskType string   `json:"task_type"`
+	Outputs  []string `json:"outputs"`
+}
+
+func uniTaskType(rule string) string {
+	lower := strings.ToLower(rule)
+	switch {
+	case strings.Contains(lower, "r8") || strings.Contains(lower, "d8"):
+		return "r8"
+	case strings.Contains(lower, "kotlin") || strings.Contains(lower, "kotlinc"):
+		return "kotlinc"
+	case strings.Contains(lower, "javac") || strings.Contains(lower, "turbine"):
+		return "javac"
+	case strings.Contains(lower, "rust"):
+		return "rustc"
+	case strings.Contains(lower, "clang"):
+		return "clang"
+	case strings.Contains(lower, "link") || lower == "ld" || strings.HasPrefix(lower, "ld"):
+		return "linker"
+	default:
+		return "other"
+	}
+}
+
+func writeUniTaskMetadata(ctx *android.Context, path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".uni-task-metadata-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	writer := bufio.NewWriterSize(temporary, 256*1024)
+	_, writeErr := writer.WriteString("{\"version\":1,\"actions\":[")
+	first := true
+	ctx.Context.VisitModuleBuildActions(func(action blueprint.ModuleBuildAction) {
+		if writeErr != nil {
+			return
+		}
+		data, err := json.Marshal(uniTaskAction{
+			Module: action.Module, Rule: action.Rule,
+			TaskType: uniTaskType(action.Rule), Outputs: action.Outputs,
+		})
+		if err != nil {
+			writeErr = err
+			return
+		}
+		if !first {
+			if err := writer.WriteByte(','); err != nil {
+				writeErr = err
+				return
+			}
+		}
+		first = false
+		_, writeErr = writer.Write(data)
+	})
+	if writeErr == nil {
+		_, writeErr = writer.WriteString("]}\n")
+	}
+	if writeErr == nil {
+		writeErr = writer.Flush()
+	}
+	if writeErr == nil {
+		writeErr = temporary.Sync()
+	}
+	if writeErr == nil {
+		writeErr = temporary.Chmod(0666)
+	}
+	if closeErr := temporary.Close(); writeErr == nil {
+		writeErr = closeErr
+	}
+	if writeErr != nil {
+		return writeErr
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 func writeMetrics(ctx *android.Context, configuration android.Config, eventHandler *metrics.EventHandler, metricsDir string) {
@@ -519,6 +605,7 @@ func main() {
 	ctx.Register()
 	finalOutputFile, ninjaDeps := runSoongOnlyBuild(ctx)
 	maybeQuit(writeUniR8Modules(ctx, availableEnv["UNI_R8_MODULES_FILE"]), "write uni R8 module list")
+	maybeQuit(writeUniTaskMetadata(ctx, availableEnv["UNI_TASK_METADATA_FILE"]), "write uni task metadata")
 
 	ninjaDeps = append(ninjaDeps, configuration.ProductVariablesFileName)
 	ninjaDeps = append(ninjaDeps, usedEnvFile)
