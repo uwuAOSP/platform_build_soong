@@ -131,6 +131,25 @@ func collectUniGraphFiles(soongNinja string, paths ...string) ([]uniGraphFile, s
 	return statUniGraphFiles(graphPaths...)
 }
 
+func sameUniGraphFilesExcept(current, expected []uniGraphFile, mutablePath string) bool {
+	if len(current) != len(expected) {
+		return false
+	}
+	mutablePath = filepath.Clean(mutablePath)
+	for index := range current {
+		if filepath.Clean(current[index].Path) != filepath.Clean(expected[index].Path) {
+			return false
+		}
+		if filepath.Clean(current[index].Path) == mutablePath {
+			continue
+		}
+		if current[index].Size != expected[index].Size || current[index].ModTimeNano != expected[index].ModTimeNano {
+			return false
+		}
+	}
+	return true
+}
+
 // WriteUniState records the graph identity needed by the standalone scheduler.
 // It is called after Soong and Kati finish and before any Ninja action runs.
 func WriteUniState(config Config, originalArgs []string) error {
@@ -308,14 +327,15 @@ func LoadUniState(config Config) error {
 	if filepath.Clean(state.OutDir) != filepath.Clean(outDir) {
 		return fmt.Errorf("uni output directory changed")
 	}
-	_, fingerprint, err := collectUniGraphFiles(
+	currentFiles, fingerprint, err := collectUniGraphFiles(
 		state.SoongNinja, state.CombinedNinja, state.SoongVariables, state.KatiEnvironment,
 		state.KatiBuildNinja, state.KatiPackageNinja,
 		filepath.Join(state.ProductOut, "all_modules.txt"), state.BuildDateTimeFile)
 	if err != nil {
 		return err
 	}
-	if fingerprint != state.GraphFingerprint {
+	if fingerprint != state.GraphFingerprint &&
+		!sameUniGraphFilesExcept(currentFiles, state.GraphFiles, state.BuildDateTimeFile) {
 		return fmt.Errorf("uni build graph changed")
 	}
 	config.SetTargetDevice(state.TargetDevice)

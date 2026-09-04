@@ -126,6 +126,23 @@ func TestCollectUniGraphFilesIncludesAdditionalFiles(t *testing.T) {
 	}
 }
 
+func TestSameUniGraphFilesExceptMutableBuildDate(t *testing.T) {
+	expected := []uniGraphFile{
+		{Path: "/out/build.ninja", Size: 10, ModTimeNano: 20},
+		{Path: "/out/build_date.txt", Size: 11, ModTimeNano: 30},
+	}
+	current := append([]uniGraphFile(nil), expected...)
+	current[1].Size = 10
+	current[1].ModTimeNano = 40
+	if !sameUniGraphFilesExcept(current, expected, "/out/build_date.txt") {
+		t.Fatal("mutable build date invalidated the graph")
+	}
+	current[0].Size++
+	if sameUniGraphFilesExcept(current, expected, "/out/build_date.txt") {
+		t.Fatal("real graph change was ignored")
+	}
+}
+
 func TestUniCombinedNinjaUpdatesR8Pool(t *testing.T) {
 	directory := t.TempDir()
 	env := Environment([]string{
