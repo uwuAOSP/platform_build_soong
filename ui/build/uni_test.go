@@ -148,6 +148,7 @@ func TestUniCombinedNinjaUpdatesR8Pool(t *testing.T) {
 	env := Environment([]string{
 		"OUT_DIR=" + directory,
 		"NINJA_UNI_R8_NUM_JOBS=7",
+		"NINJA_UNI_RUST_NUM_JOBS=5",
 		"NINJA_UNI_JAVA_NUM_JOBS=11",
 		"NINJA_UNI_KOTLIN_NUM_JOBS=6",
 	})
@@ -166,6 +167,9 @@ func TestUniCombinedNinjaUpdatesR8Pool(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "pool uni_r8_pool\n depth = 7\n") {
 		t.Fatalf("missing R8 pool depth: %s", data)
+	}
+	if !strings.Contains(string(data), "pool uni_rust_pool\n depth = 5\n") {
+		t.Fatalf("missing Rust pool depth: %s", data)
 	}
 	if !strings.Contains(string(data), "pool uni_java_pool\n depth = 11\n") {
 		t.Fatalf("missing Java pool depth: %s", data)

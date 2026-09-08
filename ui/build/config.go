@@ -1671,6 +1671,13 @@ func (c *configImpl) UniR8Parallel() int {
 	return c.Parallel()
 }
 
+func (c *configImpl) UniRustParallel() int {
+	if parallel, ok := c.environ.GetInt("NINJA_UNI_RUST_NUM_JOBS"); ok {
+		return max(1, parallel)
+	}
+	return c.Parallel()
+}
+
 func (c *configImpl) UniJavaParallel() int {
 	if parallel, ok := c.environ.GetInt("NINJA_UNI_JAVA_NUM_JOBS"); ok {
 		return max(1, parallel)

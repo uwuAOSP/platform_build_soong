@@ -45,6 +45,7 @@ var (
 			CommandDeps:    []string{"$rustcCmd", "${RustcLinkerCmd}", "${config.ClangCmd}", "${DepfileVerifier}", "${RustcWrapper}", "${SoongEnvCmd}"},
 			Rspfile:        "${out}.clang.rsp",
 			RspfileContent: "${crtBegin} ${earlyLinkFlags} ${linkFlags} ${crtEnd}",
+			Pool:           android.UniRustPool,
 		}, &remoteexec.REParams{
 			// Until there's a "rust" tool, use clang. This interprets "-L" flags
 			// to help identify potential build dependencies.

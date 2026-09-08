@@ -145,10 +145,14 @@ func TestUniR8Parallel(t *testing.T) {
 
 func TestUniCompilerParallel(t *testing.T) {
 	env := Environment([]string{
+		"NINJA_UNI_RUST_NUM_JOBS=5",
 		"NINJA_UNI_JAVA_NUM_JOBS=11",
 		"NINJA_UNI_KOTLIN_NUM_JOBS=6",
 	})
 	config := Config{&configImpl{environ: &env, parallel: 18}}
+	if got := config.UniRustParallel(); got != 5 {
+		t.Fatalf("UniRustParallel() = %d, want 5", got)
+	}
 	if got := config.UniJavaParallel(); got != 11 {
 		t.Fatalf("UniJavaParallel() = %d, want 11", got)
 	}

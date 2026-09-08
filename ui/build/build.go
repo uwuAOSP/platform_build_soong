@@ -111,6 +111,8 @@ pool highmem_pool
  depth = {{.HighmemParallel}}
 pool uni_r8_pool
  depth = {{.UniR8Parallel}}
+pool uni_rust_pool
+ depth = {{.UniRustParallel}}
 pool uni_java_pool
  depth = {{.UniJavaParallel}}
 pool uni_kotlin_pool
