@@ -337,6 +337,7 @@ func incrementalValid(config android.Config, configCacheFile string) (*ConfigCac
 
 	file, err := os.Open(configCacheFile)
 	if err != nil && os.IsNotExist(err) {
+		fmt.Println("Soong analysis cache miss: configuration cache is missing")
 		return &newConfigCache, false
 	}
 	maybeQuit(err, "")
@@ -350,7 +351,24 @@ func incrementalValid(config android.Config, configCacheFile string) (*ConfigCac
 		return &newConfigCache, false
 	}
 
-	return &newConfigCache, newConfigCache == configCache
+	valid := newConfigCache == configCache
+	if valid {
+		fmt.Println("Soong analysis cache: reusing build actions")
+	} else {
+		if newConfigCache.EnvDepsHash != configCache.EnvDepsHash {
+			fmt.Println("Soong analysis cache miss: used environment changed")
+		}
+		if newConfigCache.ProductVariableFileTimestamp != configCache.ProductVariableFileTimestamp {
+			fmt.Println("Soong analysis cache miss: product variables changed")
+		}
+		if newConfigCache.SoongBuildFileTimestamp != configCache.SoongBuildFileTimestamp {
+			fmt.Println("Soong analysis cache miss: soong_build changed")
+		}
+		if newConfigCache.KatiEnabled != configCache.KatiEnabled || newConfigCache.KatiSuffix != configCache.KatiSuffix {
+			fmt.Println("Soong analysis cache miss: Make configuration changed")
+		}
+	}
+	return &newConfigCache, valid
 }
 
 func getFileTimestamp(file string) int64 {
