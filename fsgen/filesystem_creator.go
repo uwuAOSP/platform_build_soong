@@ -162,8 +162,13 @@ func filesystemCreatorFactory() android.Module {
 		}
 		generatedPrebuiltEtcModuleNames := createPrebuiltEtcModules(ctx)
 		avbpubkeyGenerated := createAvbpubkeyModule(ctx)
-		createFsGenState(ctx, generatedPrebuiltEtcModuleNames, avbpubkeyGenerated)
+		fsGenState := createFsGenState(ctx, generatedPrebuiltEtcModuleNames, avbpubkeyGenerated)
 		module.createAvbKeyFilegroups(ctx)
+		dtbo, dtbo16k := createPrebuiltDtboImages(ctx)
+		if bootOtas := createBootOtas16kModules(ctx, dtbo, dtbo16k); bootOtas != "" &&
+			ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.Board16kOtaMoveVendor {
+			(*fsGenState.fsDeps["vendor"])[bootOtas] = defaultDepCandidateProps(ctx.Config())
+		}
 		module.createMiscFilegroups(ctx)
 		module.createProductConfigDistGenrules(ctx)
 		module.createInternalModules(ctx)

@@ -1903,7 +1903,8 @@ func (a *androidDevice) setVbmetaPhonyTargets(ctx android.ModuleContext) {
 			if provider, ok := android.OtherModuleProvider(ctx, img, vbmetaPartitionProvider); ok {
 				// make generates `vbmetasystemimage` phony target instead of `vbmeta_systemimage` phony target.
 				partitionName := strings.ReplaceAll(provider.Name, "_", "")
-				ctx.Phony(fmt.Sprintf("%simage", partitionName), provider.Output)
+				installPath := android.PathForModuleInPartitionInstall(ctx, "", provider.Name+".img")
+				ctx.Phony(fmt.Sprintf("%simage", partitionName), installPath)
 			}
 		}
 	}

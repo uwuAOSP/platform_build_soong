@@ -153,7 +153,7 @@ func (a *androidDevice) copyFilesToProductOutForSoongOnly(ctx android.ModuleCont
 		}
 	})
 
-	copyBootImg := func(prop *string, type_ string) {
+	copyBootImg := func(prop *string, type_, phonyName string) {
 		if proptools.String(prop) != "" {
 			partition := ctx.GetDirectDepProxyWithTag(*prop, filesystemDepTag)
 			if info, ok := android.OtherModuleProvider(ctx, partition, BootimgInfoProvider); ok {
@@ -164,17 +164,18 @@ func (a *androidDevice) copyFilesToProductOutForSoongOnly(ctx android.ModuleCont
 					Output: installPath,
 				})
 				deps = append(deps, installPath)
+				ctx.Phony(phonyName, installPath)
 			} else {
 				ctx.ModuleErrorf("%s does not set BootimgInfo\n", *prop)
 			}
 		}
 	}
 
-	copyBootImg(a.partitionProps.Init_boot_partition_name, "init_boot")
-	copyBootImg(a.partitionProps.Boot_partition_name, "boot")
-	copyBootImg(a.partitionProps.Vendor_boot_partition_name, "vendor_boot")
-	copyBootImg(a.partitionProps.Vendor_kernel_boot_partition_name, "vendor_kernel_boot")
-	copyBootImg(a.partitionProps.Vendor_boot_debug_partition_name, "vendor_boot-debug")
+	copyBootImg(a.partitionProps.Init_boot_partition_name, "init_boot", "initbootimage")
+	copyBootImg(a.partitionProps.Boot_partition_name, "boot", "bootimage")
+	copyBootImg(a.partitionProps.Vendor_boot_partition_name, "vendor_boot", "vendorbootimage")
+	copyBootImg(a.partitionProps.Vendor_kernel_boot_partition_name, "vendor_kernel_boot", "vendorkernelbootimage")
+	copyBootImg(a.partitionProps.Vendor_boot_debug_partition_name, "vendor_boot-debug", "vendorbootimage_debug")
 
 	// vendor bootconfig
 	// https://cs.android.com/android/platform/superproject/main/+/main:build/make/core/Makefile;l=1672;drc=a951ebf0198006f7fd38073a05c442d0eb92f97b
@@ -243,6 +244,9 @@ func (a *androidDevice) copyFilesToProductOutForSoongOnly(ctx android.ModuleCont
 				Output: installPath,
 			})
 			deps = append(deps, installPath)
+			if dtbo == a.deviceProps.Dtbo_image {
+				ctx.Phony("dtboimage", installPath)
+			}
 		}
 	}
 

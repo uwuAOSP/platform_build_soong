@@ -61,6 +61,8 @@ func (p *prebuiltDtboImg) GenerateAndroidBuildActions(ctx android.ModuleContext)
 	input := android.PathForModuleSrc(ctx, proptools.String(p.properties.Src))
 	output := p.avbAddHash(ctx, input)
 	ctx.SetOutputFiles(android.Paths{output}, "")
+	installDir := android.PathForModuleInstall(ctx, "etc")
+	ctx.InstallFile(installDir, output.Base(), output)
 	android.SetProvider(
 		ctx,
 		DtboImgInfoProvider,
