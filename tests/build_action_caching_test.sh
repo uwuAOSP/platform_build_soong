@@ -17,6 +17,32 @@ function test_build_action_restoring_providers() {
   do_test_build_action_restoring "--incremental-provider-test"
 }
 
+function test_prebuilt_etc_build_action_restoring() {
+  setup
+  local test_dir="test_prebuilt_etc_build_action_restoring"
+  mkdir -p "${test_dir}"
+  cat > "${test_dir}/Android.bp" <<'EOF'
+prebuilt_etc {
+  name: "test_policy",
+  src: "test_policy",
+}
+EOF
+  touch "${test_dir}/test_policy"
+
+  run_soong SOONG_INCREMENTAL_ANALYSIS=true
+  mkdir -p "${test_dir}/before"
+  cp -pr out/soong/build.test_arm64*.ninja* "${test_dir}/before"
+
+  echo '// new comment' >> "${test_dir}/Android.bp"
+  run_soong SOONG_INCREMENTAL_ANALYSIS=true
+  mkdir -p "${test_dir}/after"
+  cp -pr out/soong/build.test_arm64*.ninja* "${test_dir}/after"
+
+  compare_files_parity "${test_dir}/before" "${test_dir}/after"
+  rm -rf "${test_dir}"
+  echo "test_prebuilt_etc_build_action_restoring test passed"
+}
+
 function do_test_build_action_restoring() {
   local test_dir="test_build_action_restoring"
   mkdir -p ${test_dir}

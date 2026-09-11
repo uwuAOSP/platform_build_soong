@@ -249,7 +249,10 @@ func TestPrebuiltEtcCannotDstsWithFilenameFromSrc(t *testing.T) {
 }
 
 func TestPrebuiltEtcAndroidMk(t *testing.T) {
-	result := prepareForPrebuiltEtcTest.RunTestWithBp(t, `
+	result := android.GroupFixturePreparers(
+		prepareForPrebuiltEtcTest,
+		android.PrepareForTestWithAndroidMk,
+	).RunTestWithBp(t, `
 		prebuilt_etc {
 			name: "foo",
 			src: "foo.conf",
@@ -274,11 +277,19 @@ func TestPrebuiltEtcAndroidMk(t *testing.T) {
 
 	mod := result.Module("foo", "android_arm64_armv8-a").(*PrebuiltEtc)
 	entries := android.AndroidMkEntriesForTest(t, result.TestContext, mod)[0]
+	mod.outputFilePaths = nil
+	mod.installDirPaths = nil
+	providerInfo := android.AndroidMkInfoForTest(t, result.TestContext, mod).PrimaryInfo
 	for k, expectedValue := range expected {
 		if value, ok := entries.EntryMap[k]; ok {
 			android.AssertDeepEquals(t, k, expectedValue, value)
 		} else {
 			t.Errorf("No %s defined, saw %q", k, entries.EntryMap)
+		}
+		if value, ok := providerInfo.EntryMap[k]; ok {
+			android.AssertDeepEquals(t, k+" provider", expectedValue, value)
+		} else {
+			t.Errorf("No %s defined in provider, saw %q", k, providerInfo.EntryMap)
 		}
 	}
 }

@@ -286,3 +286,21 @@ func (p *PythonTestModule) AndroidMkEntries() []android.AndroidMkEntries {
 
 	return entriesList
 }
+
+func (p *PythonTestModule) PrepareAndroidMKProviderInfo(config android.Config) *android.AndroidMkProviderInfo {
+	info := p.PythonBinaryModule.PrepareAndroidMKProviderInfo(config)
+	if info == nil {
+		return nil
+	}
+
+	info.PrimaryInfo.Class = "NATIVE_TESTS"
+	if p.testConfig != nil {
+		info.PrimaryInfo.SetString("LOCAL_FULL_TEST_CONFIG", p.testConfig.String())
+	}
+	if proptools.String(p.testProperties.Test_options.Runner) == "mobly" {
+		info.PrimaryInfo.SetString("LOCAL_TEST_CONFIG_SUFFIX", "v2")
+	}
+	info.PrimaryInfo.SetBoolIfTrue("LOCAL_DISABLE_AUTO_GENERATE_TEST_CONFIG", !BoolDefault(p.binaryProperties.Auto_gen_config, true))
+	p.testProperties.Test_options.SetAndroidMkInfoEntries(&info.PrimaryInfo)
+	return info
+}

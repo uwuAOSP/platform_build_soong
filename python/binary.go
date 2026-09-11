@@ -182,6 +182,10 @@ func (p *PythonBinaryModule) buildBinary(ctx android.ModuleContext) {
 }
 
 func (p *PythonBinaryModule) AndroidMkEntries() []android.AndroidMkEntries {
+	if p.installSource == nil || p.installedDest == nil {
+		return []android.AndroidMkEntries{{}}
+	}
+
 	entries := android.AndroidMkEntries{OutputFile: android.OptionalPathForPath(p.installSource)}
 
 	entries.Class = "EXECUTABLES"
@@ -205,6 +209,30 @@ func (p *PythonBinaryModule) AndroidMkEntries() []android.AndroidMkEntries {
 		})
 
 	return []android.AndroidMkEntries{entries}
+}
+
+func (p *PythonBinaryModule) PrepareAndroidMKProviderInfo(_ android.Config) *android.AndroidMkProviderInfo {
+	if p.installSource == nil || p.installedDest == nil {
+		return nil
+	}
+
+	info := &android.AndroidMkProviderInfo{
+		PrimaryInfo: android.AndroidMkInfo{
+			Class:      "EXECUTABLES",
+			OutputFile: android.OptionalPathForPath(p.installSource),
+		},
+	}
+	info.PrimaryInfo.Required = append(info.PrimaryInfo.Required, "libc++")
+	info.PrimaryInfo.AddCompatibilityTestSuites(p.binaryProperties.Test_suites...)
+
+	path, file := filepath.Split(p.installedDest.String())
+	stem := strings.TrimSuffix(file, filepath.Ext(file))
+	info.PrimaryInfo.SetString("LOCAL_MODULE_SUFFIX", filepath.Ext(file))
+	info.PrimaryInfo.SetString("LOCAL_MODULE_PATH", path)
+	info.PrimaryInfo.SetString("LOCAL_MODULE_STEM", stem)
+	info.PrimaryInfo.AddStrings("LOCAL_SHARED_LIBRARIES", p.androidMkSharedLibs...)
+	info.PrimaryInfo.SetBool("LOCAL_CHECK_ELF_FILES", false)
+	return info
 }
 
 func (p *PythonBinaryModule) DepsMutator(ctx android.BottomUpMutatorContext) {

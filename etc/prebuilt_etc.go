@@ -669,6 +669,49 @@ func (p *PrebuiltEtc) AndroidMkEntries() []android.AndroidMkEntries {
 	}}
 }
 
+func (p *PrebuiltEtc) PrepareAndroidMKProviderInfo(_ android.Config) *android.AndroidMkProviderInfo {
+	if len(p.outputFilePaths) == 0 || len(p.installDirPaths) == 0 {
+		return nil
+	}
+
+	nameSuffix := ""
+	if p.inRamdisk() && !p.onlyInRamdisk() {
+		nameSuffix = ".ramdisk"
+	}
+	if p.inVendorRamdisk() && !p.onlyInVendorRamdisk() {
+		nameSuffix = ".vendor_ramdisk"
+	}
+	if p.inDebugRamdisk() && !p.onlyInDebugRamdisk() {
+		nameSuffix = ".debug_ramdisk"
+	}
+	if p.InRecovery() && !p.onlyInRecovery() {
+		nameSuffix = ".recovery"
+	}
+
+	class := p.makeClass
+	if class == "" {
+		class = "ETC"
+	}
+
+	info := &android.AndroidMkProviderInfo{
+		PrimaryInfo: android.AndroidMkInfo{
+			Class:      class,
+			SubName:    nameSuffix,
+			OutputFile: android.OptionalPathForPath(p.outputFilePaths[0]),
+		},
+	}
+	info.PrimaryInfo.SetString("LOCAL_MODULE_TAGS", "optional")
+	info.PrimaryInfo.SetString("LOCAL_MODULE_PATH", p.installDirPaths[0].String())
+	info.PrimaryInfo.SetString("LOCAL_INSTALLED_MODULE_STEM", p.outputFilePaths[0].Base())
+	info.PrimaryInfo.AddStrings("LOCAL_MODULE_SYMLINKS", p.properties.Symlinks...)
+	info.PrimaryInfo.SetBoolIfTrue("LOCAL_UNINSTALLABLE_MODULE", !p.Installable())
+	info.PrimaryInfo.AddStrings("LOCAL_OVERRIDES_MODULES", p.Overrides()...)
+
+	return info
+}
+
+var _ android.AndroidMkProviderInfoProducer = (*PrebuiltEtc)(nil)
+
 func (p *PrebuiltEtc) AndroidModuleBase() *android.ModuleBase {
 	return &p.ModuleBase
 }
