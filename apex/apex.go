@@ -457,8 +457,11 @@ type installPairs []installPair
 // String converts a list of installPair structs to the form accepted by LOCAL_SOONG_INSTALL_PAIRS.
 func (p installPairs) String() string {
 	sb := &strings.Builder{}
-	for i, pair := range p {
-		if i != 0 {
+	for _, pair := range p {
+		if pair.from == nil {
+			continue
+		}
+		if sb.Len() != 0 {
 			sb.WriteByte(' ')
 		}
 		sb.WriteString(pair.from.String())

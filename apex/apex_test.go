@@ -52,6 +52,16 @@ func names(s string) (ns []string) {
 	return
 }
 
+func TestInstallPairsStringSkipsMissingSource(t *testing.T) {
+	pairs := installPairs{
+		{from: nil, to: android.InstallPath{}},
+		{from: android.PathForTesting("apex.apex"), to: android.InstallPath{}},
+	}
+	if got, want := pairs.String(), "apex.apex:"; got != want {
+		t.Fatalf("installPairs.String() = %q, want %q", got, want)
+	}
+}
+
 func testApexError(t *testing.T, pattern, bp string, preparers ...android.FixturePreparer) {
 	t.Helper()
 	android.GroupFixturePreparers(
