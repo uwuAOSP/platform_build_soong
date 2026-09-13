@@ -515,6 +515,10 @@ EXTRA_INSTALL_ZIPS :=
 			fmt.Fprintf(buf, "\t( unzip -qDD -d '%s' '%s' 2>&1 | grep -v \"zipfile is empty\"; exit $${PIPESTATUS[0]} ) || \\\n", extraFiles.dir.String(), extraFiles.zip.String())
 			fmt.Fprintf(buf, "\t  ( code=$$?; if [ $$code -ne 0 -a $$code -ne 1 ]; then exit $$code; fi )\n")
 			fmt.Fprintf(buf, "EXTRA_INSTALL_ZIPS += %s:%s:%s\n", install.to.String(), extraFiles.dir.String(), extraFiles.zip.String())
+			if partition := extraFiles.dir.Partition(); partition == "vendor_dlkm" || partition == "system_dlkm" {
+				// DLKM images use the primary install file to select the extra zip contents.
+				fmt.Fprintf(buf, "ALL_DEFAULT_INSTALLED_MODULES += %s\n", install.to.String())
+			}
 		}
 
 		fmt.Fprintln(buf)
