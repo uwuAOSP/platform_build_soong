@@ -41,8 +41,19 @@ func (m *AdbKeysModule) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 		ctx.ModuleErrorf("adb_keys module type must set product_specific to true")
 	}
 
+	adbKeys := android.String(productVariables.AdbKeys)
+	if adbKeys == "" {
+		m.SkipInstall()
+		return
+	}
+
+	input := android.ExistentPathForSource(ctx, adbKeys)
+	if !input.Valid() {
+		ctx.ModuleErrorf("PRODUCT_ADB_KEYS file %q does not exist", adbKeys)
+		return
+	}
+
 	outputPath := android.PathForModuleOut(ctx, "adb_keys")
-	input := android.ExistentPathForSource(ctx, android.String(productVariables.AdbKeys))
 	ctx.Build(pctx, android.BuildParams{
 		Rule:   android.CpRule,
 		Output: outputPath,
