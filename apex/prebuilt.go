@@ -290,7 +290,17 @@ func (p *prebuiltCommon) AndroidMkEntries() []android.AndroidMkEntries {
 					entries.AddStrings("LOCAL_SOONG_INSTALL_SYMLINKS", p.compatSymlinks.Strings()...)
 					entries.SetBoolIfTrue("LOCAL_UNINSTALLABLE_MODULE", !p.installable())
 					entries.AddStrings("LOCAL_OVERRIDES_MODULES", p.prebuiltCommonProperties.Overrides...)
-					entries.SetString("LOCAL_APEX_KEY_PATH", p.apexKeysPath.String())
+					apexKeysPath := android.Path(p.apexKeysPath)
+					if apexKeysPath == nil {
+						if provider, ok := ctx.Provider(filesystem.ApexKeyPathInfoProvider); ok {
+							if info, valid := provider.(filesystem.ApexKeyPathInfo); valid {
+								apexKeysPath = info.ApexKeyPath
+							}
+						}
+					}
+					if apexKeysPath != nil {
+						entries.SetString("LOCAL_APEX_KEY_PATH", apexKeysPath.String())
+					}
 					if p.apkCertsFile != nil {
 						entries.SetString("LOCAL_APKCERTS_FILE", p.apkCertsFile.String())
 					}
