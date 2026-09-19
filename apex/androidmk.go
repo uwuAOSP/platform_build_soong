@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"android/soong/android"
+	"android/soong/filesystem"
 	"android/soong/java"
 )
 
@@ -254,7 +255,17 @@ func (a *apexBundle) AndroidMk() android.AndroidMkData {
 				fmt.Fprintln(w, "LOCAL_SOONG_INSTALL_SYMLINKS := ", strings.Join(a.compatSymlinks.Strings(), " "))
 				fmt.Fprintln(w, "LOCAL_SOONG_INSTALL_PAIRS +=", a.extraInstalledPairs.String())
 			}
-			fmt.Fprintln(w, "LOCAL_APEX_KEY_PATH := ", a.apexKeysPath.String())
+			apexKeysPath := android.Path(a.apexKeysPath)
+			if apexKeysPath == nil {
+				if provider, ok := data.Provider(filesystem.ApexKeyPathInfoProvider); ok {
+					if info, valid := provider.(filesystem.ApexKeyPathInfo); valid {
+						apexKeysPath = info.ApexKeyPath
+					}
+				}
+			}
+			if apexKeysPath != nil {
+				fmt.Fprintln(w, "LOCAL_APEX_KEY_PATH := ", apexKeysPath.String())
+			}
 
 			// Because apex writes .mk with Custom(), we need to write manually some common properties
 			// which are available via data.Entries

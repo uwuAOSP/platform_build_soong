@@ -76,6 +76,16 @@ type AndroidMkData struct {
 	Extra []AndroidMkExtraFunc
 
 	Entries AndroidMkEntries
+
+	providerContext AndroidMkExtraEntriesContext
+}
+
+// Provider returns a provider set on the module whose Android.mk data is being emitted.
+func (data AndroidMkData) Provider(provider blueprint.AnyProviderKey) (any, bool) {
+	if data.providerContext == nil {
+		return nil, false
+	}
+	return data.providerContext.Provider(provider)
 }
 
 // @auto-generate: gob
@@ -668,6 +678,11 @@ func translateAndroidMkModule(ctx SingletonContext, w io.Writer, moduleInfoJSONs
 }
 
 func (data *AndroidMkData) fillInData(ctx fillInEntriesContext, mod Module) {
+	data.providerContext = &androidMkExtraEntriesContext{
+		ctx: ctx,
+		mod: mod,
+	}
+
 	// Get the preamble content through AndroidMkEntries logic.
 	data.Entries = AndroidMkEntries{
 		Class:           data.Class,

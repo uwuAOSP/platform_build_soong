@@ -3364,6 +3364,31 @@ func TestProductVariant(t *testing.T) {
 	ensureListNotContains(t, cflags, "-D__ANDROID_VENDOR__")
 }
 
+func TestAndroidMkRestoresApexKeyPathFromProvider(t *testing.T) {
+	ctx := testApex(t, `
+		apex {
+			name: "myapex",
+			key: "myapex.key",
+			updatable: false,
+		}
+
+		apex_key {
+			name: "myapex.key",
+			public_key: "testkey.avbpubkey",
+			private_key: "testkey.pem",
+		}
+	`)
+
+	bundle := ctx.ModuleForTests(t, "myapex", "android_common_myapex").Module().(*apexBundle)
+	expected := bundle.apexKeysPath.String()
+	data := android.AndroidMkDataForTest(t, ctx, bundle)
+	bundle.apexKeysPath = nil
+
+	var builder strings.Builder
+	data.Custom(&builder, bundle.BaseModuleName(), "TARGET_", "", data)
+	ensureContains(t, builder.String(), "LOCAL_APEX_KEY_PATH :=  "+expected)
+}
+
 func TestApex_withPrebuiltFirmware(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
