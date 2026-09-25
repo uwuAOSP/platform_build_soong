@@ -63,6 +63,9 @@ func TestRenderBannerPlainText(t *testing.T) {
 	if strings.Contains(got, "'") {
 		t.Fatalf("banner contains a single quote and cannot be safely cached by dumpvars: %q", got)
 	}
+	if strings.Contains(got, "Remote build") {
+		t.Fatalf("banner contains removed remote build status:\n%s", got)
+	}
 }
 
 func TestRenderBannerTrueColor(t *testing.T) {

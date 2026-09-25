@@ -216,7 +216,6 @@ type bannerState struct {
 	partialCompile  string
 	partialAnalysis string
 	ninja           string
-	useRBE          bool
 	useRewrapper    string
 }
 
@@ -339,7 +338,6 @@ func renderBanner(makeVars map[string]string, state bannerState, color, trueColo
 		{"Partial compile", state.partialCompile},
 		{"Partial analysis", state.partialAnalysis},
 		{"Ninja backend", state.ninja},
-		{"Remote build", strconv.FormatBool(state.useRBE)},
 		{"Rewrapper", state.useRewrapper},
 	})
 	writeBannerSection(b, style, "Host", []bannerField{
@@ -360,11 +358,8 @@ func Banner(config Config, make_vars map[string]string) string {
 	if config.ninjaCommand != NINJA_DEFAULT {
 		state.ninja = config.ninjaCommand.String()
 	}
-	if config.UseRBE() {
-		state.useRBE = true
-		if config.ninjaCommand == NINJA_SISO {
-			state.useRewrapper = strconv.FormatBool(config.UseRewrapper())
-		}
+	if config.UseRBE() && config.ninjaCommand == NINJA_SISO {
+		state.useRewrapper = strconv.FormatBool(config.UseRewrapper())
 	}
 	if config.skipKatiControlledByFlags {
 		state.soongOnly = config.soongOnlyRequested
