@@ -962,6 +962,34 @@ func TestFileDeleted(t *testing.T) {
 	finder2.Shutdown()
 }
 
+func TestDeletedDirectoryIgnoredWhenParentMtimeUnchanged(t *testing.T) {
+	filesystem := newFs()
+	fs.Create(t, "/tmp/a/findme.txt", filesystem)
+	fs.Create(t, "/tmp/a/gone/findme.txt", filesystem)
+
+	finder := newFinder(
+		t,
+		filesystem,
+		CacheParams{
+			RootDirs:     []string{"/tmp"},
+			IncludeFiles: []string{"findme.txt"},
+		},
+	)
+	finder.Shutdown()
+
+	parentTime := fs.ModTime(t, "/tmp/a", filesystem)
+	filesystem.Clock.Tick()
+	fs.RemoveAll(t, "/tmp/a/gone", filesystem)
+	if err := filesystem.SetModTime("/tmp/a", parentTime); err != nil {
+		t.Fatal(err)
+	}
+
+	finder2 := finderWithSameParams(t, finder)
+	foundPaths := finder2.FindNamedAt("/tmp", "findme.txt")
+	fs.AssertSameResponse(t, foundPaths, []string{"/tmp/a/findme.txt"})
+	finder2.Shutdown()
+}
+
 func TestDirectoriesDeleted(t *testing.T) {
 	// setup filesystem
 	filesystem := newFs()

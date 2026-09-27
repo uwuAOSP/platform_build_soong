@@ -411,6 +411,7 @@ type statResponse struct {
 	ModTime int64
 	Inode   uint64
 	Device  uint64
+	missing bool
 }
 
 // a pathAndStats stores a path and its stats
@@ -530,6 +531,16 @@ func (m *pathMap) newChild(name string) (child *pathMap) {
 	m.children[name] = newChild
 
 	return m.children[name]
+}
+
+func (m *pathMap) pruneMissing() {
+	for name, child := range m.children {
+		if child.missing {
+			delete(m.children, name)
+			continue
+		}
+		child.pruneMissing()
+	}
 }
 
 func (m *pathMap) UpdateNumDescendents() int {
@@ -821,6 +832,13 @@ func (f *Finder) loadBytes(id int, data []byte) (m *pathMap, dirsToWalk []string
 		container := tempMap.GetNode(cachedNode.Path, true)
 		container.mapNode = mapNode{statResponse: updated}
 
+		// A directory that no longer exists must not keep its cached filenames.
+		// Its parent directory timestamp can still match the cache, which would
+		// otherwise leave the deleted tree reachable on the next search.
+		if updated.missing {
+			f.setModified()
+			continue
+		}
 		// if the metadata changed and the directory still exists, then
 		// make a note to walk it later
 		if !f.isInfoUpToDate(cachedNode.statResponse, updated) && updated.ModTime != 0 {
@@ -1003,6 +1021,8 @@ func (f *Finder) startFromExternalCache() (err error) {
 	}
 	f.verbosef("Loaded db and statted known dirs in %v\n", time.Since(startTime))
 	f.threadPool.Wait()
+	f.nodes.pruneMissing()
+	f.nodes.UpdateNumDescendentsRecursive()
 	f.verbosef("Loaded db and statted all dirs in %v\n", time.Now().Sub(startTime))
 
 	return err
@@ -1287,6 +1307,7 @@ func (f *Finder) statDirSync(path string) statResponse {
 		// possibly record this error
 		f.onFsError(path, err)
 		// in case of a failure to stat the directory, treat the directory as missing (modTime = 0)
+		stats.missing = os.IsNotExist(err)
 		return stats
 	}
 	modTime := fileInfo.ModTime()

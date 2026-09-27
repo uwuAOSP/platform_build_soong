@@ -931,6 +931,20 @@ func (m *MockFs) RemoveAll(path string) (err error) {
 	return nil
 }
 
+func (m *MockFs) SetModTime(path string, modTime time.Time) error {
+	path, err := m.resolve(path, false)
+	if err != nil {
+		return err
+	}
+	dir, err := m.getDir(path, false)
+	if err != nil {
+		return err
+	}
+	dir.modTime = modTime
+	dir.permTime = modTime
+	return nil
+}
+
 func (m *MockFs) SetReadable(path string, readable bool) error {
 	var readErr error
 	if !readable {
