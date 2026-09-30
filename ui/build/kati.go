@@ -232,7 +232,12 @@ func runKati(ctx Context, config Config, e *TraceEvent, extraSuffix string, args
 	cmd.StartOrFatal()
 	// Set up the ToolStatus command line reader for Kati for a consistent UI
 	// for the user.
-	status.KatiReader(ctx.Status.StartTool(), pipe)
+	statusSocket, _ := config.Environment().Get("UNI_STATUS_SOCKET")
+	katiStatus := newUniStatusForwarder(ctx.Status.StartTool(), statusSocket)
+	if forwarder, ok := katiStatus.(*uniStatusForwarder); ok {
+		defer forwarder.Close()
+	}
+	status.KatiReader(katiStatus, pipe)
 	cmd.WaitOrFatal()
 }
 

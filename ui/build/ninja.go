@@ -16,12 +16,15 @@
 package build
 
 import (
+	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"android/soong/shared"
@@ -35,6 +38,105 @@ const (
 	ninjaLogFileName        = ".ninja_log"
 	ninjaWeightListFileName = ".ninja_weight_list"
 )
+
+type uniStatusEvent struct {
+	Type                  string `json:"type"`
+	ID                    uint64 `json:"id,omitempty"`
+	Description           string `json:"description,omitempty"`
+	StartedUnixNano       int64  `json:"started_unix_nano,omitempty"`
+	Total                 int    `json:"total,omitempty"`
+	EstimatedTimeUnixNano int64  `json:"estimated_time_unix_nano,omitempty"`
+}
+
+// uniStatusForwarder mirrors build action events to Uni's compact TUI.
+// The normal Soong status output remains the source of user-facing build logs.
+type uniStatusForwarder struct {
+	status.ToolStatus
+	connection net.Conn
+	mutex      sync.Mutex
+	nextID     uint64
+	actionIDs  map[*status.Action]uint64
+}
+
+func newUniStatusForwarder(base status.ToolStatus, socket string) status.ToolStatus {
+	if socket == "" {
+		return base
+	}
+	connection, err := net.DialTimeout("unix", socket, 250*time.Millisecond)
+	if err != nil {
+		return base
+	}
+	forwarder := &uniStatusForwarder{
+		ToolStatus: base,
+		connection: connection,
+		actionIDs:  make(map[*status.Action]uint64),
+	}
+	forwarder.send(uniStatusEvent{Type: "reset"})
+	return forwarder
+}
+
+func (forwarder *uniStatusForwarder) send(event uniStatusEvent) {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	forwarder.mutex.Lock()
+	defer forwarder.mutex.Unlock()
+	_ = forwarder.connection.SetWriteDeadline(time.Now().Add(250 * time.Millisecond))
+	_, _ = forwarder.connection.Write(append(data, '\n'))
+	_ = forwarder.connection.SetWriteDeadline(time.Time{})
+}
+
+func (forwarder *uniStatusForwarder) SetTotalActions(total int) {
+	forwarder.ToolStatus.SetTotalActions(total)
+	forwarder.send(uniStatusEvent{Type: "total", Total: total})
+}
+
+func (forwarder *uniStatusForwarder) SetEstimatedTime(estimatedTime time.Time) {
+	forwarder.ToolStatus.SetEstimatedTime(estimatedTime)
+	forwarder.send(uniStatusEvent{Type: "estimate", EstimatedTimeUnixNano: estimatedTime.UnixNano()})
+}
+
+func (forwarder *uniStatusForwarder) StartAction(action *status.Action) {
+	forwarder.ToolStatus.StartAction(action)
+	forwarder.mutex.Lock()
+	forwarder.nextID++
+	id := forwarder.nextID
+	forwarder.actionIDs[action] = id
+	forwarder.mutex.Unlock()
+	description := action.Description
+	if description == "" {
+		description = action.Command
+	}
+	forwarder.send(uniStatusEvent{
+		Type:            "start",
+		ID:              id,
+		Description:     description,
+		StartedUnixNano: time.Now().UnixNano(),
+	})
+}
+
+func (forwarder *uniStatusForwarder) FinishAction(result status.ActionResult) {
+	forwarder.ToolStatus.FinishAction(result)
+	forwarder.mutex.Lock()
+	id, found := forwarder.actionIDs[result.Action]
+	delete(forwarder.actionIDs, result.Action)
+	forwarder.mutex.Unlock()
+	if found {
+		description := result.Description
+		if description == "" && result.Action != nil {
+			description = result.Action.Description
+			if description == "" {
+				description = result.Action.Command
+			}
+		}
+		forwarder.send(uniStatusEvent{Type: "finish", ID: id, Description: description})
+	}
+}
+
+func (forwarder *uniStatusForwarder) Close() {
+	_ = forwarder.connection.Close()
+}
 
 // Runs ninja with the arguments from the command line, as found in
 // config.NinjaArgs().
@@ -53,7 +155,12 @@ func runNinja(ctx Context, config Config, ninjaArgs []string) {
 	// translates it to the soong_ui status output, displaying real-time
 	// progress of the build.
 	fifo := filepath.Join(config.OutDir(), ".ninja_fifo")
-	nr := status.NewNinjaReader(ctx, ctx.Status.StartTool(), fifo, ctx.SigNumFunc)
+	statusSocket, _ := config.Environment().Get("UNI_STATUS_SOCKET")
+	ninjaStatus := newUniStatusForwarder(ctx.Status.StartTool(), statusSocket)
+	if forwarder, ok := ninjaStatus.(*uniStatusForwarder); ok {
+		defer forwarder.Close()
+	}
+	nr := status.NewNinjaReader(ctx, ninjaStatus, fifo, ctx.SigNumFunc)
 	defer nr.Close()
 
 	var executable string

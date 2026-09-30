@@ -662,7 +662,12 @@ func runSoong(ctx Context, config Config, enforceNoSoongOutput bool) {
 
 		fifo := filepath.Join(config.OutDir(), ".ninja_fifo")
 		bootstrapStatus := newSoongBootstrapStatus(ctx.Status.StartTool(), config.SoongNinjaFile())
-		nr := status.NewNinjaReader(ctx, bootstrapStatus, fifo, ctx.SigNumFunc)
+		statusSocket, _ := config.Environment().Get("UNI_STATUS_SOCKET")
+		ninjaStatus := newUniStatusForwarder(bootstrapStatus, statusSocket)
+		if forwarder, ok := ninjaStatus.(*uniStatusForwarder); ok {
+			defer forwarder.Close()
+		}
+		nr := status.NewNinjaReader(ctx, ninjaStatus, fifo, ctx.SigNumFunc)
 		stopAnalysisStatus := monitorSoongAnalysisStatus(ctx, soongAnalysisStatusFile(config))
 		defer stopAnalysisStatus()
 		func() {
