@@ -22,14 +22,46 @@ import (
 	"testing"
 )
 
-func TestUniPrepareDisablesIncrementalAnalysis(t *testing.T) {
+func TestUniPrepareDisablesIncrementalAnalysisByDefault(t *testing.T) {
 	config := Config{&configImpl{incrementalBuildActions: true}}
 	config.SetUniPrepareMode()
 	if config.incrementalBuildActions {
 		t.Fatal("uni prepare must not restore incremental analysis state")
 	}
 	if !config.incrementalBuildActionsSetInEnv {
-		t.Fatal("release configuration may re-enable incremental analysis")
+		t.Fatal("uni prepare must mark its default cache policy as resolved")
+	}
+	if !config.UseUniNinjaShards() {
+		t.Fatal("uni prepare must use sharded Ninja output")
+	}
+	if config.UseIncrementalBuildActions() {
+		t.Fatal("uni prepare must keep action caching opt-in")
+	}
+}
+
+func TestUniPrepareRespectsExplicitIncrementalAnalysis(t *testing.T) {
+	env := Environment([]string{"SOONG_INCREMENTAL_ANALYSIS=true"})
+	config := Config{&configImpl{
+		environ:                         &env,
+		incrementalBuildActions:         true,
+		incrementalBuildActionsSetInEnv: true,
+	}}
+	config.SetUniPrepareMode()
+	if !config.incrementalBuildActions {
+		t.Fatal("uni prepare must preserve explicit incremental analysis opt-in")
+	}
+	if !config.UseIncrementalBuildActions() {
+		t.Fatal("uni prepare must enable action caching when explicitly requested")
+	}
+}
+
+func TestTraditionalBuildDoesNotUseUniSoongOptimizations(t *testing.T) {
+	config := Config{&configImpl{incrementalBuildActions: true}}
+	if config.UseUniNinjaShards() {
+		t.Fatal("traditional builds must use the unsharded Ninja graph")
+	}
+	if config.UseIncrementalBuildActions() {
+		t.Fatal("traditional builds must not restore uni action-cache state")
 	}
 }
 

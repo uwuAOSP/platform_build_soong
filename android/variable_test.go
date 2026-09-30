@@ -17,6 +17,7 @@ package android
 import (
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/blueprint/proptools"
@@ -131,6 +132,33 @@ type testProductVariableModule struct {
 }
 
 func (m *testProductVariableModule) GenerateAndroidBuildActions(ctx ModuleContext) {
+}
+
+func TestModuleForcedDisabledStateCacheRestoresOnlyForcedDisabled(t *testing.T) {
+	module := &testProductVariableModule{}
+	properties := &struct {
+		Values []string
+	}{Values: []string{"unchanged"}}
+	module.AddProperties(properties)
+	module.base().commonProperties.ForcedDisabled = true
+
+	cache := ModuleForcedDisabledStateCache{}
+	state, err := cache.Snapshot(module)
+	if err != nil {
+		t.Fatalf("snapshot forced-disabled state: %v", err)
+	}
+
+	module.base().commonProperties.ForcedDisabled = false
+	properties.Values = []string{"must remain"}
+	if err := cache.Restore(module, state); err != nil {
+		t.Fatalf("restore forced-disabled state: %v", err)
+	}
+	if !module.base().commonProperties.ForcedDisabled {
+		t.Fatal("forced-disabled state was not restored")
+	}
+	if got := strings.Join(properties.Values, ","); got != "must remain" {
+		t.Fatalf("unrelated properties changed to %q", got)
+	}
 }
 
 var testProductVariableProperties = struct {

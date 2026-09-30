@@ -191,10 +191,18 @@ func SoongConfigModuleTypeImportFactory() Module {
 }
 
 func (m *soongConfigModuleTypeImport) Name() string {
-	// The generated name is non-deterministic, but it does not
-	// matter because this module does not emit any rules.
+	// Keep the runtime module name unique. Source declaration caching uses the
+	// stable SourceDeclarationName method below instead of this pointer suffix.
 	return soongconfig.CanonicalizeToProperty(m.properties.From) +
 		"soong_config_module_type_import_" + fmt.Sprintf("%p", m)
+}
+
+func (m *soongConfigModuleTypeImport) SourceDeclarationName() string {
+	return soongconfig.CanonicalizeToProperty(m.properties.From) + "soong_config_module_type_import"
+}
+
+func (m *soongConfigModuleTypeImport) ModuleActionCacheIdentity() string {
+	return fmt.Sprintf("%#v", m.properties)
 }
 
 func (*soongConfigModuleTypeImport) Namespaceless()                            {}
@@ -316,6 +324,14 @@ func SoongConfigModuleTypeFactory() Module {
 func (m *soongConfigModuleTypeModule) Name() string {
 	return m.properties.Name + fmt.Sprintf("%p", m)
 }
+
+func (m *soongConfigModuleTypeModule) SourceDeclarationName() string {
+	return m.properties.Name
+}
+
+func (m *soongConfigModuleTypeModule) ModuleActionCacheIdentity() string {
+	return fmt.Sprintf("%#v", m.properties)
+}
 func (*soongConfigModuleTypeModule) Namespaceless()                                {}
 func (*soongConfigModuleTypeModule) GenerateAndroidBuildActions(ctx ModuleContext) {}
 
@@ -365,17 +381,41 @@ func SoongConfigValueVariableDummyFactory() Module {
 func (m *soongConfigStringVariableDummyModule) Name() string {
 	return m.properties.Name + fmt.Sprintf("%p", m)
 }
+
+func (m *soongConfigStringVariableDummyModule) SourceDeclarationName() string {
+	return m.properties.Name
+}
+
+func (m *soongConfigStringVariableDummyModule) ModuleActionCacheIdentity() string {
+	return fmt.Sprintf("%#v|%#v", m.properties, m.stringProperties)
+}
 func (*soongConfigStringVariableDummyModule) Namespaceless()                                {}
 func (*soongConfigStringVariableDummyModule) GenerateAndroidBuildActions(ctx ModuleContext) {}
 
 func (m *soongConfigBoolVariableDummyModule) Name() string {
 	return m.properties.Name + fmt.Sprintf("%p", m)
 }
+
+func (m *soongConfigBoolVariableDummyModule) SourceDeclarationName() string {
+	return m.properties.Name
+}
+
+func (m *soongConfigBoolVariableDummyModule) ModuleActionCacheIdentity() string {
+	return fmt.Sprintf("%#v", m.properties)
+}
 func (*soongConfigBoolVariableDummyModule) Namespaceless()                                {}
 func (*soongConfigBoolVariableDummyModule) GenerateAndroidBuildActions(ctx ModuleContext) {}
 
 func (m *soongConfigValueVariableDummyModule) Name() string {
 	return m.properties.Name + fmt.Sprintf("%p", m)
+}
+
+func (m *soongConfigValueVariableDummyModule) SourceDeclarationName() string {
+	return m.properties.Name
+}
+
+func (m *soongConfigValueVariableDummyModule) ModuleActionCacheIdentity() string {
+	return fmt.Sprintf("%#v", m.properties)
 }
 func (*soongConfigValueVariableDummyModule) Namespaceless()                                {}
 func (*soongConfigValueVariableDummyModule) GenerateAndroidBuildActions(ctx ModuleContext) {}

@@ -91,14 +91,16 @@ type mutator struct {
 	bottomUpMutator   blueprint.BottomUpMutator
 	transitionMutator blueprint.TransitionMutator
 
-	usesRename              bool
-	usesReverseDependencies bool
-	usesReplaceDependencies bool
-	usesCreateModule        bool
-	mutatesDependencies     bool
-	mutatesGlobalState      bool
-	neverFar                bool
-	prePartial              bool
+	usesRename                   bool
+	usesReverseDependencies      bool
+	usesReplaceDependencies      bool
+	usesCreateModule             bool
+	mutatesDependencies          bool
+	mutatesGlobalState           bool
+	incrementalStateCache        blueprint.MutatorStateCache
+	dependencyLookupCacheVersion string
+	neverFar                     bool
+	prePartial                   bool
 }
 
 var _ sortableComponent = &mutator{}

@@ -18,6 +18,7 @@ import (
 	"io"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -40,6 +41,30 @@ type phonySingleton struct {
 	phonyList []string
 
 	soongDist
+}
+
+const soongPhonyNinjaShardCount = 1024
+
+const soongPhonyNinjaShardWriteConcurrency = 8
+
+func soongPhonyNinjaShardIndex(target string) int {
+	const offset32 = 2166136261
+	const prime32 = 16777619
+	hash := uint32(offset32)
+	for i := 0; i < len(target); i++ {
+		hash ^= uint32(target[i])
+		hash *= prime32
+	}
+	return int(hash % soongPhonyNinjaShardCount)
+}
+
+func shardSoongPhonyTargets(targets []string) [][]string {
+	shards := make([][]string, soongPhonyNinjaShardCount)
+	for _, target := range targets {
+		shard := soongPhonyNinjaShardIndex(target)
+		shards[shard] = append(shards[shard], target)
+	}
+	return shards
 }
 
 var _ SingletonMakeVarsProvider = (*phonySingleton)(nil)
@@ -137,17 +162,37 @@ func (p *phonySingleton) GenerateBuildActions(ctx SingletonContext) {
 		soongNoDistFile := PathForOutput(ctx, "build"+suffix+".nodist.ninja")
 		ctx.addSubninja(soongPhonyNinja.String())
 		ctx.addSubninja(PathForOutput(ctx).String() + "/build" + suffix + ".$dist.ninja")
+		phonyShards := shardSoongPhonyTargets(p.phonyList)
+		phonyShardPaths := make([]string, len(phonyShards))
+		for i := range phonyShards {
+			phonyShardPaths[i] = PathForOutput(ctx, "build"+suffix+".phony."+strconv.Itoa(i)+".ninja").String()
+		}
 
 		wg := WaitGroupWithErrorCollector{}
 
 		wg.Go(func() error {
-			f, err := openBufferedFile(absolutePath(soongPhonyNinja.String()))
+			f, err := openBufferedFileWithBufferSize(absolutePath(soongPhonyNinja.String()), 64*1024)
 			if err != nil {
 				return err
 			}
 			defer f.Close()
-			return p.writeSoongPhonyNinja(f)
+			return p.writeSoongPhonyNinja(f, phonyShardPaths)
 		})
+
+		shardWriteSlots := make(chan struct{}, soongPhonyNinjaShardWriteConcurrency)
+		for i, targets := range phonyShards {
+			shardPath := phonyShardPaths[i]
+			wg.Go(func() error {
+				shardWriteSlots <- struct{}{}
+				defer func() { <-shardWriteSlots }()
+				f, err := openBufferedFileWithBufferSize(absolutePath(shardPath), 64*1024)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				return p.writeSoongPhonyNinjaShard(f, targets)
+			})
+		}
 
 		wg.GoWithMultipleErrors(func() []error {
 			return p.soongDist.writeNinjaFiles(soongDistFile, soongNoDistFile, ctx.Config().REWrapperRemoteBuild())
@@ -176,14 +221,30 @@ func (p *phonySingleton) IncrementalSupported() bool {
 }
 
 // writeSoongPhonyNinja writes a ninja file containing phony rules for each phony target requested in Soong-only builds.
-func (p *phonySingleton) writeSoongPhonyNinja(w io.StringWriter) error {
+func (p *phonySingleton) writeSoongPhonyNinja(w io.StringWriter, shardPaths []string) error {
 	var err error
 	write := func(s string) {
 		if err == nil {
 			_, err = w.WriteString(s)
 		}
 	}
-	for _, phony := range p.phonyList {
+	for _, shardPath := range shardPaths {
+		write("subninja ")
+		write(shardPath)
+		write("\n")
+	}
+	write("default droid\n")
+	return err
+}
+
+func (p *phonySingleton) writeSoongPhonyNinjaShard(w io.StringWriter, targets []string) error {
+	var err error
+	write := func(s string) {
+		if err == nil {
+			_, err = w.WriteString(s)
+		}
+	}
+	for _, phony := range targets {
 		write("build ")
 		write(phony)
 		write(": phony")
@@ -194,8 +255,5 @@ func (p *phonySingleton) writeSoongPhonyNinja(w io.StringWriter) error {
 		write("\n")
 		write(" phony_output = true\n")
 	}
-
-	write("default droid\n")
-
 	return err
 }

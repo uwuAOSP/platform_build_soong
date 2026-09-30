@@ -16,7 +16,42 @@ package android
 
 import (
 	"testing"
+
+	"android/soong/android/soongconfig"
 )
+
+func TestSoongConfigDummyActionCacheIdentitiesAreStable(t *testing.T) {
+	verify := func(name string, first, second, changed string) {
+		t.Helper()
+		if first != second {
+			t.Errorf("%s identity changed across module instances: %q != %q", name, first, second)
+		}
+		if first == changed {
+			t.Errorf("%s identity did not reflect changed properties: %q", name, first)
+		}
+	}
+
+	verify("module type import",
+		(&soongConfigModuleTypeImport{properties: soongConfigModuleTypeImportProperties{From: "device/Android.bp", Module_types: []string{"board_cc_defaults"}}}).ModuleActionCacheIdentity(),
+		(&soongConfigModuleTypeImport{properties: soongConfigModuleTypeImportProperties{From: "device/Android.bp", Module_types: []string{"board_cc_defaults"}}}).ModuleActionCacheIdentity(),
+		(&soongConfigModuleTypeImport{properties: soongConfigModuleTypeImportProperties{From: "other/Android.bp", Module_types: []string{"board_cc_defaults"}}}).ModuleActionCacheIdentity())
+	verify("module type declaration",
+		(&soongConfigModuleTypeModule{properties: soongconfig.ModuleTypeProperties{Name: "board_cc_defaults", Module_type: "cc_defaults"}}).ModuleActionCacheIdentity(),
+		(&soongConfigModuleTypeModule{properties: soongconfig.ModuleTypeProperties{Name: "board_cc_defaults", Module_type: "cc_defaults"}}).ModuleActionCacheIdentity(),
+		(&soongConfigModuleTypeModule{properties: soongconfig.ModuleTypeProperties{Name: "board_c_defaults", Module_type: "cc_defaults"}}).ModuleActionCacheIdentity())
+	verify("string variable",
+		(&soongConfigStringVariableDummyModule{properties: soongconfig.VariableProperties{Name: "board"}, stringProperties: soongconfig.StringVariableProperties{Values: []string{"a", "b"}}}).ModuleActionCacheIdentity(),
+		(&soongConfigStringVariableDummyModule{properties: soongconfig.VariableProperties{Name: "board"}, stringProperties: soongconfig.StringVariableProperties{Values: []string{"a", "b"}}}).ModuleActionCacheIdentity(),
+		(&soongConfigStringVariableDummyModule{properties: soongconfig.VariableProperties{Name: "board"}, stringProperties: soongconfig.StringVariableProperties{Values: []string{"a", "c"}}}).ModuleActionCacheIdentity())
+	verify("boolean variable",
+		(&soongConfigBoolVariableDummyModule{properties: soongconfig.VariableProperties{Name: "feature"}}).ModuleActionCacheIdentity(),
+		(&soongConfigBoolVariableDummyModule{properties: soongconfig.VariableProperties{Name: "feature"}}).ModuleActionCacheIdentity(),
+		(&soongConfigBoolVariableDummyModule{properties: soongconfig.VariableProperties{Name: "other_feature"}}).ModuleActionCacheIdentity())
+	verify("value variable",
+		(&soongConfigValueVariableDummyModule{properties: soongconfig.VariableProperties{Name: "width"}}).ModuleActionCacheIdentity(),
+		(&soongConfigValueVariableDummyModule{properties: soongconfig.VariableProperties{Name: "width"}}).ModuleActionCacheIdentity(),
+		(&soongConfigValueVariableDummyModule{properties: soongconfig.VariableProperties{Name: "other_width"}}).ModuleActionCacheIdentity())
+}
 
 type soongConfigTestDefaultsModule struct {
 	ModuleBase

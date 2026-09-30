@@ -587,6 +587,10 @@ type apexBundle struct {
 	apkCerts java.ApkCertsInfo
 }
 
+// DisableModuleActionCache prevents restoring actions without the module state
+// consumed by AndroidMk(), such as outputFile and installDir.
+func (a *apexBundle) DisableModuleActionCache() {}
+
 // apexFileClass represents a type of file that can be included in APEX.
 type apexFileClass int
 

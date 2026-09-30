@@ -94,7 +94,17 @@ func RegisterAppImportBuildComponents(ctx android.RegistrationContext) {
 	ctx.RegisterModuleType("android_app_import", AndroidAppImportFactory)
 	ctx.RegisterModuleType("android_test_import", AndroidTestImportFactory)
 	ctx.PreArchMutators(func(ctx android.RegisterMutatorsContext) {
-		ctx.BottomUp("disable_prebuilts_without_apk", disablePrebuiltsWithoutApkMutator)
+		ctx.BottomUp("disable_prebuilts_without_apk", disablePrebuiltsWithoutApkMutator).
+			IncrementalStateCache(android.ModuleForcedDisabledStateCache{
+				ModuleFilter: func(module android.Module) bool {
+					switch module.(type) {
+					case *AndroidAppImport, *AndroidTestImport:
+						return true
+					default:
+						return false
+					}
+				},
+			})
 	})
 }
 

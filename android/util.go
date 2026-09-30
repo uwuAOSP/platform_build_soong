@@ -19,7 +19,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/blueprint/pathtools"
 	"github.com/google/blueprint/proptools"
 )
 
@@ -660,7 +661,7 @@ func AppendIfNotZero[T comparable](slice []T, value T) []T {
 
 type bufferedStringWriterCloser struct {
 	*bufio.Writer
-	f *os.File
+	f io.WriteCloser
 }
 
 func (b bufferedStringWriterCloser) Close() error {
@@ -670,11 +671,15 @@ func (b bufferedStringWriterCloser) Close() error {
 }
 
 func openBufferedFile(path string) (*bufferedStringWriterCloser, error) {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+	return openBufferedFileWithBufferSize(path, 16*1024*1024)
+}
+
+func openBufferedFileWithBufferSize(path string, bufferSize int) (*bufferedStringWriterCloser, error) {
+	f, err := pathtools.OpenWithContentComparison(pathtools.OsFs, path)
 	if err != nil {
 		return nil, err
 	}
-	buf := bufio.NewWriterSize(f, 16*1024*1024)
+	buf := bufio.NewWriterSize(f, bufferSize)
 	return &bufferedStringWriterCloser{
 		Writer: buf,
 		f:      f,

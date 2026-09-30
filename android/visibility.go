@@ -288,8 +288,29 @@ func registerVisibilityMutators(ctx RegistrationContext) {
 // The rule checker needs to be registered before defaults expansion to correctly check that
 // //visibility:xxx isn't combined with other packages in the same list in any one module.
 func RegisterVisibilityRuleChecker(ctx RegisterMutatorsContext) {
-	ctx.BottomUp("visibilityRuleChecker", visibilityRuleChecker)
+	ctx.BottomUp("visibilityRuleChecker", visibilityRuleChecker).
+		IncrementalStateCache(visibilityRuleCheckerStateCache{})
 }
+
+// visibilityRuleChecker only validates properties from the current source
+// module. It has no state to restore for unchanged declarations.
+type visibilityRuleCheckerStateCache struct{}
+
+var _ blueprint.MutatorStateCacheVersion = visibilityRuleCheckerStateCache{}
+
+func (visibilityRuleCheckerStateCache) CacheVersion() string {
+	return "visibility-rule-checker-v1"
+}
+
+func (visibilityRuleCheckerStateCache) Snapshot(blueprint.Module) ([]byte, error) {
+	return nil, nil
+}
+
+func (visibilityRuleCheckerStateCache) Restore(blueprint.Module, []byte) error {
+	return nil
+}
+
+func (visibilityRuleCheckerStateCache) NoModuleState() {}
 
 // Registers the function that gathers the visibility rules for each module.
 //

@@ -1473,7 +1473,11 @@ func (d *Droidstubs) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 			ctx.PropertyErrorf("baseline_file", "current API check can't have a baseline file. (module %s)", ctx.ModuleName())
 		}
 
-		d.checkCurrentApiTimestamp = android.PathForModuleOut(ctx, Everything.String(), "check_current_api.timestamp")
+		// Keep this stamp outside the everything output directory. The Metalava
+		// sbox rule owns that directory and removes files not listed in its
+		// output manifest, which would otherwise delete this separately-built
+		// validation output on a later Metalava run.
+		d.checkCurrentApiTimestamp = android.PathForModuleOut(ctx, "check_current_api.timestamp")
 
 		rule := android.NewRuleBuilder(pctx, ctx).SandboxDisabled()
 

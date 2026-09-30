@@ -15,13 +15,18 @@
 package android
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
+	"github.com/google/blueprint"
 	"github.com/google/blueprint/proptools"
 )
 
@@ -44,7 +49,61 @@ import (
 // - it has none of the "Without" properties matched (same rules as above)
 
 func registerNeverallowMutator(ctx RegisterMutatorsContext) {
-	ctx.BottomUp("neverallow", neverallowMutator)
+	localRules, dependencyRules := splitNeverallowRules(neverallows)
+	ctx.BottomUp("neverallow", neverallowMutator).
+		IncrementalStateCache(neverallowMutatorStateCache{rules: localRules})
+	if len(dependencyRules) != 0 {
+		ctx.BottomUp("neverallow_direct_deps", neverallowDirectDepsMutator)
+	}
+}
+
+// neverallowMutatorStateCache records that unchanged source declarations were
+// checked against rules that depend only on that module. Direct-dependency
+// rules run in a separate uncached mutator.
+type neverallowMutatorStateCache struct {
+	rules []Rule
+}
+
+var _ blueprint.MutatorStateCacheNoModuleState = neverallowMutatorStateCache{}
+var _ blueprint.MutatorStateCacheVersion = neverallowMutatorStateCache{}
+
+func (neverallowMutatorStateCache) Snapshot(blueprint.Module) ([]byte, error) { return nil, nil }
+func (neverallowMutatorStateCache) Restore(blueprint.Module, []byte) error    { return nil }
+func (neverallowMutatorStateCache) NoModuleState()                            {}
+func (cache neverallowMutatorStateCache) CacheVersion() string {
+	localRules, _ := splitNeverallowRules(cache.rules)
+	return neverallowRulesCacheVersion(localRules)
+}
+
+func neverallowRulesUseDirectDeps(rules []Rule) bool {
+	_, dependencyRules := splitNeverallowRules(rules)
+	return len(dependencyRules) != 0
+}
+
+func splitNeverallowRules(rules []Rule) (localRules, dependencyRules []Rule) {
+	for _, candidate := range rules {
+		rule, ok := candidate.(*rule)
+		if !ok || len(rule.directDeps) != 0 {
+			dependencyRules = append(dependencyRules, candidate)
+		} else {
+			localRules = append(localRules, candidate)
+		}
+	}
+	return localRules, dependencyRules
+}
+
+func neverallowRulesCacheVersion(rules []Rule) string {
+	descriptions := make([]string, 0, len(rules))
+	for _, candidate := range rules {
+		if rule, ok := candidate.(*rule); ok {
+			descriptions = append(descriptions, rule.String())
+		} else {
+			descriptions = append(descriptions, fmt.Sprintf("%T:%v", candidate, candidate))
+		}
+	}
+	sort.Strings(descriptions)
+	hash := sha256.Sum256([]byte(strings.Join(descriptions, "\x00")))
+	return fmt.Sprintf("neverallow-local-v2-%x", hash)
 }
 
 var neverallows = []Rule{}
@@ -429,6 +488,14 @@ func createUncheckedModuleRule() Rule {
 }
 
 func neverallowMutator(ctx BottomUpMutatorContext) {
+	neverallowMutatorWithRuleFilter(ctx, false)
+}
+
+func neverallowDirectDepsMutator(ctx BottomUpMutatorContext) {
+	neverallowMutatorWithRuleFilter(ctx, true)
+}
+
+func neverallowMutatorWithRuleFilter(ctx BottomUpMutatorContext, directDepsOnly bool) {
 	m, ok := ctx.Module().(Module)
 	if !ok {
 		return
@@ -441,6 +508,9 @@ func neverallowMutator(ctx BottomUpMutatorContext) {
 
 	for _, r := range neverallowRules(ctx.Config()) {
 		n := r.(*rule)
+		if (len(n.directDeps) != 0) != directDepsOnly {
+			continue
+		}
 		if !n.appliesToPath(dir) {
 			continue
 		}
@@ -561,8 +631,24 @@ func (m *isSetMatcher) String() string {
 var isSetMatcherInstance = &isSetMatcher{}
 
 type ruleProperty struct {
-	fields  []string // e.x.: Vndk.Enabled
-	matcher ValueMatcher
+	fields    []string // e.x.: Vndk.Enabled
+	fieldPath string
+	matcher   ValueMatcher
+}
+
+type neverallowPropertyFieldKey struct {
+	typ  reflect.Type
+	path string
+}
+
+type neverallowPropertyFieldIndexes struct {
+	indexes []int
+	valid   bool
+}
+
+var neverallowPropertyFieldIndexCache struct {
+	mu     sync.Mutex
+	values atomic.Pointer[map[neverallowPropertyFieldKey]neverallowPropertyFieldIndexes]
 }
 
 func (r *ruleProperty) String() string {
@@ -679,8 +765,9 @@ func (r *rule) With(properties, value string) Rule {
 // WithMatcher specifies property/matcher combinations that are restricted for this rule.
 func (r *rule) WithMatcher(properties string, matcher ValueMatcher) Rule {
 	r.props = append(r.props, ruleProperty{
-		fields:  fieldNamesForProperties(properties),
-		matcher: matcher,
+		fields:    fieldNamesForProperties(properties),
+		fieldPath: strings.ReplaceAll(properties, ".", "\x00"),
+		matcher:   matcher,
 	})
 	return r
 }
@@ -693,8 +780,9 @@ func (r *rule) Without(properties, value string) Rule {
 // Without specifies property/matcher combinations that this rule does not apply to.
 func (r *rule) WithoutMatcher(properties string, matcher ValueMatcher) Rule {
 	r.unlessProps = append(r.unlessProps, ruleProperty{
-		fields:  fieldNamesForProperties(properties),
-		matcher: matcher,
+		fields:    fieldNamesForProperties(properties),
+		fieldPath: strings.ReplaceAll(properties, ".", "\x00"),
+		matcher:   matcher,
 	})
 	return r
 }
@@ -869,12 +957,14 @@ func hasAllProperties(ctx BottomUpMutatorContext, properties []interface{}, prop
 func hasProperty(ctx BottomUpMutatorContext, properties []interface{}, prop ruleProperty) bool {
 	for _, propertyStruct := range properties {
 		propertiesValue := reflect.ValueOf(propertyStruct).Elem()
-		for _, v := range prop.fields {
-			if !propertiesValue.IsValid() {
-				break
-			}
-			propertiesValue = propertiesValue.FieldByName(v)
+		if !propertiesValue.IsValid() {
+			continue
 		}
+		indexes, ok := neverallowPropertyFieldIndexesFor(propertiesValue.Type(), prop)
+		if !ok {
+			continue
+		}
+		propertiesValue = propertiesValue.FieldByIndex(indexes)
 		if !propertiesValue.IsValid() {
 			continue
 		}
@@ -888,6 +978,54 @@ func hasProperty(ctx BottomUpMutatorContext, properties []interface{}, prop rule
 		}
 	}
 	return false
+}
+
+func neverallowPropertyFieldIndexesFor(typ reflect.Type, prop ruleProperty) ([]int, bool) {
+	path := prop.fieldPath
+	if path == "" {
+		path = strings.Join(prop.fields, "\x00")
+	}
+	key := neverallowPropertyFieldKey{typ: typ, path: path}
+	if values := neverallowPropertyFieldIndexCache.values.Load(); values != nil {
+		if entry, ok := (*values)[key]; ok {
+			return entry.indexes, entry.valid
+		}
+	}
+
+	neverallowPropertyFieldIndexCache.mu.Lock()
+	defer neverallowPropertyFieldIndexCache.mu.Unlock()
+	oldValues := neverallowPropertyFieldIndexCache.values.Load()
+	if oldValues != nil {
+		if entry, ok := (*oldValues)[key]; ok {
+			return entry.indexes, entry.valid
+		}
+	}
+
+	current := typ
+	indexes := make([]int, 0, len(prop.fields))
+	valid := true
+	for _, name := range prop.fields {
+		for current.Kind() == reflect.Ptr {
+			current = current.Elem()
+		}
+		field, ok := current.FieldByName(name)
+		if !ok {
+			valid = false
+			break
+		}
+		indexes = append(indexes, field.Index...)
+		current = field.Type
+	}
+	entry := neverallowPropertyFieldIndexes{indexes: indexes, valid: valid}
+	newValues := make(map[neverallowPropertyFieldKey]neverallowPropertyFieldIndexes, 1)
+	if oldValues != nil {
+		for cachedKey, cachedEntry := range *oldValues {
+			newValues[cachedKey] = cachedEntry
+		}
+	}
+	newValues[key] = entry
+	neverallowPropertyFieldIndexCache.values.Store(&newValues)
+	return entry.indexes, entry.valid
 }
 
 func matchValue(ctx BottomUpMutatorContext, value reflect.Value, check func(string) bool) bool {
@@ -960,6 +1098,11 @@ func PrepareForTestWithNeverallowRules(testRules []Rule) FixturePreparer {
 		}),
 		FixtureRegisterWithContext(func(ctx RegistrationContext) {
 			ctx.PostDepsMutators(registerNeverallowMutator)
+			if testRules != nil && neverallowRulesUseDirectDeps(testRules) && !neverallowRulesUseDirectDeps(neverallows) {
+				ctx.PostDepsMutators(func(ctx RegisterMutatorsContext) {
+					ctx.BottomUp("neverallow_test_direct_deps", neverallowDirectDepsMutator)
+				})
+			}
 		}),
 	)
 }

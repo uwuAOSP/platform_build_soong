@@ -97,9 +97,11 @@ func init() {
 	// the time to remove them yet
 	flag.BoolVar(&cmdlineArgs.RunGoTests, "t", false, "build and run go tests during bootstrap")
 	flag.BoolVar(&cmdlineArgs.IncrementalBuildActions, "incremental-build-actions", false, "generate build actions incrementally")
+	flag.BoolVar(&cmdlineArgs.ShardNinja, "uni-ninja-shards", false, "write the Soong Ninja graph as reusable shards for uni")
 	flag.StringVar(&cmdlineArgs.PartialAnalysisTargets, "partial-analysis-targets", "", "partial analysis targets")
 	flag.BoolVar(&cmdlineArgs.IncrementalProviderTest, "incremental-provider-test", false, "test incremental providers restoring")
 	flag.StringVar(&cmdlineArgs.IncrementalDebugFile, "incremental-debug-file", "", "incremental debug file")
+	flag.BoolVar(&cmdlineArgs.IncrementalDebugMissesOnly, "incremental-debug-misses-only", false, "write only modules that were not restored from the incremental cache")
 
 	// Disable deterministic randomization in the protobuf package, so incremental
 	// builds with unrelated Soong changes don't trigger large rebuilds (since we
@@ -496,6 +498,8 @@ func main() {
 	metricsDir := availableEnv["LOG_DIR"]
 
 	ctx := newContext(configuration)
+	mutatorVisitStatsEnabled := availableEnv["SOONG_MUTATOR_VISIT_STATS"] == "true"
+	ctx.SetMutatorVisitStatsEnabled(mutatorVisitStatsEnabled)
 	progress := newAnalysisProgress(statusFile, cmdlineArgs.ModuleListFile)
 	if hookContext, ok := any(ctx).(analysisEventHookContext); ok {
 		hookContext.SetEventStartedHook(progress.eventStarted)
@@ -516,6 +520,7 @@ func main() {
 	ctx.SetIncrementalAnalysis(incremental)
 	ctx.SetPartialAnalysisTargets(cmdlineArgs.PartialAnalysisTargets)
 	ctx.SetIncrementalDebugFile(cmdlineArgs.IncrementalDebugFile)
+	ctx.SetIncrementalDebugMissesOnly(cmdlineArgs.IncrementalDebugMissesOnly)
 
 	if configuration.Getenv("SOONG_SPLIT_ALL_VARIANTS") == "true" ||
 		configuration.Getenv("RUN_BUILD_TESTS") == "true" ||

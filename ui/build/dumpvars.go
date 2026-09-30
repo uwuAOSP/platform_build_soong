@@ -366,7 +366,7 @@ func Banner(config Config, make_vars map[string]string) string {
 	} else { // default for this product
 		state.soongOnly = make_vars["PRODUCT_SOONG_ONLY"] == "true"
 	}
-	state.incremental = config.incrementalBuildActions
+	state.incremental = config.UseIncrementalBuildActions()
 	if len(config.partialAnalysisTargets) > 0 {
 		state.partialAnalysis = config.partialAnalysisTargets
 	}
@@ -484,6 +484,7 @@ func runMakeProductConfig(ctx Context, config Config) {
 		"RELEASE_BUILD_WITH_JDK_25",
 		"RELEASE_SOONG_INCREMENTAL_ANALYSIS",
 		"SOONG_INCREMENTAL_ANALYSIS",
+		"SOONG_MUTATOR_VISIT_STATS",
 	}, exportEnvVars, BannerVars, sisoStringVars, earlyReleaseConfigVars)
 
 	makeVars, err := dumpMakeVars(ctx, config, config.Arguments(), allVars, "", DUMPVARS_PRODUCT_CONFIG)

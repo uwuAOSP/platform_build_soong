@@ -170,8 +170,9 @@ type configImpl struct {
 	// This file is a detailed dump of all soong-defined modules for debugging purposes.
 	// There's quite a bit of overlap with module-info.json and soong module graph. We
 	// could consider merging them.
-	moduleDebugFile      string
-	incrementalDebugFile string
+	moduleDebugFile            string
+	incrementalDebugFile       string
+	incrementalDebugMissesOnly bool
 
 	// Variables that are set when we determine PRODUCT_RELEASE_CONFIG_MAPS.
 	// This should only include:
@@ -364,13 +365,12 @@ func newConfig(ctx Context, isDumpVar bool, args ...string) Config {
 		}
 	}
 
-	// Incremental build actions are supported in both Soong-only and
-	// Soong+Make builds. Keep the environment variable as an explicit opt-out,
-	// but do not require it to be set for the optimization to be active.
+	// Keep the action-cache setting available to Uni prepare mode. The
+	// traditional Soong+Make path does not pass the cache flag to soong_build.
 	ret.incrementalBuildActions = true
-	if ret.environ.IsFalse("SOONG_INCREMENTAL_ANALYSIS") {
-		ret.incrementalBuildActions = false
+	if _, ok := ret.environ.Get("SOONG_INCREMENTAL_ANALYSIS"); ok {
 		ret.incrementalBuildActionsSetInEnv = true
+		ret.incrementalBuildActions = !ret.environ.IsFalse("SOONG_INCREMENTAL_ANALYSIS")
 	}
 
 	if value, ok := ret.environ.Get("SOONG_PARTIAL_ANALYSIS"); ok {
@@ -478,6 +478,7 @@ func newConfig(ctx Context, isDumpVar bool, args ...string) Config {
 
 	if os.Getenv("GENERATE_INCREMENTAL_DEBUG") == "true" {
 		ret.incrementalDebugFile, _ = filepath.Abs(shared.JoinPath(ret.SoongOutDir(), "incremental-debug-info.json"))
+		ret.incrementalDebugMissesOnly = ret.environ.IsEnvTrue("SOONG_INCREMENTAL_DEBUG_MISSES_ONLY")
 	}
 
 	// If SOONG_USE_PARTIAL_COMPILE is set, make it one of "true" or the empty string.
@@ -1523,12 +1524,25 @@ func (c *configImpl) SetSkipNinja(v bool) {
 func (c *configImpl) SetUniPrepareMode() {
 	c.uniPrepareMode = true
 	c.skipNinja = true
-	c.incrementalBuildActions = false
-	c.incrementalBuildActionsSetInEnv = true
+	// Uni normally starts from a fresh, authoritative analysis. Allow an explicit
+	// SOONG_INCREMENTAL_ANALYSIS setting to opt into Soong's action cache for
+	// experiments and workloads that benefit from it.
+	if !c.incrementalBuildActionsSetInEnv {
+		c.incrementalBuildActions = false
+		c.incrementalBuildActionsSetInEnv = true
+	}
 }
 
 func (c *configImpl) UniPrepareMode() bool {
 	return c.uniPrepareMode
+}
+
+func (c *configImpl) UseUniNinjaShards() bool {
+	return c.uniPrepareMode
+}
+
+func (c *configImpl) UseIncrementalBuildActions() bool {
+	return c.uniPrepareMode && c.incrementalBuildActions
 }
 
 func (c *configImpl) SetUniNinjaMode() {

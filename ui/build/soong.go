@@ -221,6 +221,9 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
 	if pb.config.incrementalDebugFile != "" {
 		commonArgs = append(commonArgs, "--incremental-debug-file")
 		commonArgs = append(commonArgs, pb.config.incrementalDebugFile)
+		if pb.config.incrementalDebugMissesOnly {
+			commonArgs = append(commonArgs, "--incremental-debug-misses-only")
+		}
 	}
 
 	commonArgs = append(commonArgs, "-l", filepath.Join(pb.config.FileListDir(), "Android.bp.list"))
@@ -286,6 +289,7 @@ func bootstrapEpochCleanup(ctx Context, config Config) {
 			if ok, _ := fileExists(file); ok {
 				os.Remove(file)
 			}
+			os.Remove(blueprint.GetNinjaShardCacheFile(file))
 		}
 		os.Remove(soongNinjaFile + ".globs")
 		os.Remove(soongNinjaFile + ".globs_time")
@@ -294,6 +298,76 @@ func bootstrapEpochCleanup(ctx Context, config Config) {
 		// Mark the tree as up to date with the current epoch by writing the epoch marker file.
 		writeEmptyFile(ctx, epochPath)
 	}
+}
+
+const (
+	traditionalSoongNinjaMode = "traditional-v1"
+	uniSoongNinjaMode         = "uni-sharded-v1"
+)
+
+func soongNinjaGenerationMode(config Config) string {
+	if config.UseUniNinjaShards() {
+		return uniSoongNinjaMode
+	}
+	return traditionalSoongNinjaMode
+}
+
+func prepareSoongNinjaGenerationMode(config Config) error {
+	return prepareSoongNinjaGenerationModeFor(config.SoongNinjaFile(), soongNinjaGenerationMode(config))
+}
+
+func prepareSoongNinjaGenerationModeFor(ninjaFile, mode string) error {
+	modeFile := ninjaFile + ".generation_mode"
+	data, err := os.ReadFile(modeFile)
+	if err == nil && strings.TrimSpace(string(data)) == mode {
+		return nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return removeSoongNinjaOutputs(ninjaFile)
+}
+
+func recordSoongNinjaGenerationMode(config Config) error {
+	return recordSoongNinjaGenerationModeFor(config.SoongNinjaFile(), soongNinjaGenerationMode(config))
+}
+
+func recordSoongNinjaGenerationModeFor(ninjaFile, mode string) error {
+	modeFile := ninjaFile + ".generation_mode"
+	return os.WriteFile(modeFile, []byte(mode+"\n"), 0666)
+}
+
+func removeSoongNinjaOutputs(ninjaFile string) error {
+	files := []string{
+		ninjaFile,
+		ninjaFile + ".globs",
+		ninjaFile + ".globs_time",
+		ninjaFile + ".glob_results",
+	}
+	files = append(files, blueprint.GetNinjaShardFiles(ninjaFile)...)
+	files = append(files, blueprint.GetNinjaSingletonShardFiles(ninjaFile)...)
+	for _, file := range append([]string(nil), files...) {
+		if strings.HasSuffix(file, ".ninja") {
+			files = append(files, blueprint.GetNinjaShardCacheFile(file))
+		}
+	}
+	for _, file := range files {
+		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove stale Soong Ninja output %q: %w", file, err)
+		}
+	}
+	return nil
+}
+
+func soongAnalysisArgs(config Config) []string {
+	var args []string
+	if config.UseUniNinjaShards() {
+		args = append(args, "--uni-ninja-shards")
+	}
+	if config.UseIncrementalBuildActions() {
+		args = append(args, "--incremental-build-actions")
+	}
+	return args
 }
 
 func bootstrapBlueprint(ctx Context, config Config) {
@@ -311,6 +385,9 @@ func bootstrapBlueprint(ctx Context, config Config) {
 
 	// Clean up some files for incremental builds across incompatible changes.
 	bootstrapEpochCleanup(ctx, config)
+	if err := prepareSoongNinjaGenerationMode(config); err != nil {
+		ctx.Fatalf("failed to prepare Soong Ninja generation mode: %s", err)
+	}
 
 	baseArgs := []string{"--soong_variables", config.SoongVarsFile()}
 
@@ -326,9 +403,7 @@ func bootstrapBlueprint(ctx Context, config Config) {
 	if config.ensureAllowlistIntegrity {
 		mainSoongBuildExtraArgs = append(mainSoongBuildExtraArgs, "--ensure-allowlist-integrity")
 	}
-	if config.incrementalBuildActions {
-		mainSoongBuildExtraArgs = append(mainSoongBuildExtraArgs, "--incremental-build-actions")
-	}
+	mainSoongBuildExtraArgs = append(mainSoongBuildExtraArgs, soongAnalysisArgs(config)...)
 	if len(config.partialAnalysisTargets) > 0 {
 		mainSoongBuildExtraArgs = append(mainSoongBuildExtraArgs, fmt.Sprintf("%s=\"%s\"", "--partial-analysis-targets", config.partialAnalysisTargets))
 	}
@@ -808,6 +883,9 @@ func runSoong(ctx Context, config Config, enforceNoSoongOutput bool) {
 	beforeSoongTimestamp := time.Now()
 
 	ninja(targets...)
+	if err := recordSoongNinjaGenerationMode(config); err != nil {
+		ctx.Fatalf("failed to record Soong Ninja generation mode: %s", err)
+	}
 
 	loadSoongBuildMetrics(ctx, config, beforeSoongTimestamp)
 

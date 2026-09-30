@@ -308,6 +308,7 @@ func writeBuildDiskUsageMetrics(m *metrics.Metrics, config build.Config) {
 	// Sum of all ninja files.
 	var ninjaFileSize int64 = 0
 	var ninjaFiles []string
+	var optionalNinjaShards = make(map[string]struct{})
 	soongNinjaFile := config.SoongNinjaFile()
 	if _, err := os.Stat(soongNinjaFile); err != nil {
 		// Skip if the soong ninja file does not exist.
@@ -315,13 +316,21 @@ func writeBuildDiskUsageMetrics(m *metrics.Metrics, config build.Config) {
 		return
 	}
 	ninjaFiles = append(ninjaFiles, soongNinjaFile)
-	ninjaFiles = append(ninjaFiles, blueprint.GetNinjaShardFiles(soongNinjaFile)...)
+	for _, file := range blueprint.GetNinjaShardFiles(soongNinjaFile) {
+		ninjaFiles = append(ninjaFiles, file)
+		optionalNinjaShards[file] = struct{}{}
+	}
 	if !config.SkipKatiNinja() && config.HasKatiSuffix() {
 		ninjaFiles = append(ninjaFiles, config.KatiBuildNinjaFile())
 	}
 	for _, file := range ninjaFiles {
 		fileInfo, err := os.Stat(file)
 		if err != nil {
+			if _, optional := optionalNinjaShards[file]; optional && os.IsNotExist(err) {
+				// During a shard-count migration, an existing graph can still
+				// reference fewer files than the current writer will generate.
+				continue
+			}
 			panic(fmt.Errorf("Could not open %s due to %s\n", file, err))
 		} else {
 			ninjaFileSize += fileInfo.Size()

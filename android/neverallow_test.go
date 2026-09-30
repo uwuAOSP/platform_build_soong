@@ -21,6 +21,32 @@ import (
 	"github.com/google/blueprint"
 )
 
+func TestNeverallowIncrementalCacheEligibilityAndVersion(t *testing.T) {
+	localRules, dependencyRules := splitNeverallowRules(neverallows)
+	if len(dependencyRules) != 0 {
+		t.Fatalf("production neverallow rules unexpectedly inspect direct dependencies: %d", len(dependencyRules))
+	}
+	if len(localRules) == 0 {
+		t.Fatal("expected production module-local rules")
+	}
+	localRule := NeverAllow().In("one").Because("reason")
+	directRule := NeverAllow().InDirectDeps("dependency")
+	local, dependency := splitNeverallowRules([]Rule{localRule, directRule})
+	if len(local) != 1 || len(dependency) != 1 || !neverallowRulesUseDirectDeps([]Rule{directRule}) {
+		t.Fatalf("unexpected neverallow rule groups: local=%d dependency=%d", len(local), len(dependency))
+	}
+	first := neverallowRulesCacheVersion(local)
+	if first != neverallowRulesCacheVersion([]Rule{NeverAllow().In("one").Because("reason")}) {
+		t.Fatal("identical rules produced different cache versions")
+	}
+	if first == neverallowRulesCacheVersion([]Rule{NeverAllow().In("two").Because("reason")}) {
+		t.Fatal("changed rules produced the same cache version")
+	}
+	if first != (neverallowMutatorStateCache{rules: append(local, NeverAllow().InDirectDeps("other"))}).CacheVersion() {
+		t.Fatal("direct-dependency rules should not invalidate the module-local cache")
+	}
+}
+
 var neverallowTests = []struct {
 	// The name of the test.
 	name string

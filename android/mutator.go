@@ -422,6 +422,12 @@ func (mutator *mutator) register(ctx *Context) {
 	if mutator.mutatesGlobalState {
 		handle.MutatesGlobalState()
 	}
+	if mutator.incrementalStateCache != nil {
+		handle.IncrementalStateCache(mutator.incrementalStateCache)
+	}
+	if mutator.dependencyLookupCacheVersion != "" {
+		handle.CacheDependencyLookups(mutator.dependencyLookupCacheVersion)
+	}
 	if mutator.prePartial {
 		handle.PrePartial()
 	}
@@ -457,6 +463,12 @@ type MutatorHandle interface {
 	// MutatesGlobalState marks the mutator as modifying global state, which prevents coalescing
 	// adjacent mutators into a single mutator pass.
 	MutatesGlobalState() MutatorHandle
+
+	// IncrementalStateCache enables per-module incremental execution for a module-local mutator.
+	IncrementalStateCache(cache blueprint.MutatorStateCache) MutatorHandle
+
+	// CacheDependencyLookups enables reuse of successful dependency-to-variant resolutions.
+	CacheDependencyLookups(version string) MutatorHandle
 
 	// PrePartial marks the mutator to be the pre-partial marker mutator.
 	PrePartial() MutatorHandle
@@ -504,6 +516,19 @@ func (mutator *mutator) MutatesGlobalState() MutatorHandle {
 	return mutator
 }
 
+func (mutator *mutator) IncrementalStateCache(cache blueprint.MutatorStateCache) MutatorHandle {
+	if cache == nil {
+		panic("IncrementalStateCache requires a non-nil cache")
+	}
+	mutator.incrementalStateCache = cache
+	return mutator
+}
+
+func (mutator *mutator) CacheDependencyLookups(version string) MutatorHandle {
+	mutator.dependencyLookupCacheVersion = version
+	return mutator
+}
+
 func (mutator *mutator) NeverFar() MutatorHandle {
 	mutator.neverFar = true
 	return mutator
@@ -541,7 +566,7 @@ func depsMutator(ctx BottomUpMutatorContext) {
 }
 
 func registerDepsMutator(ctx RegisterMutatorsContext) {
-	ctx.BottomUp("deps", depsMutator).UsesReverseDependencies()
+	ctx.BottomUp("deps", depsMutator).UsesReverseDependencies().CacheDependencyLookups("deps-lookup-v2")
 }
 
 // android.bottomUpMutatorContext either has to embed blueprint.BottomUpMutatorContext, in which case every method that
