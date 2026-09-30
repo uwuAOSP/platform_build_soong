@@ -198,6 +198,14 @@ var _ encoding.TextMarshaler = ArchType{}
 // UnmarshalText allows an ArchType to be deserialized through any decoder that supports
 // encoding.TextUnmarshaler.
 func (a *ArchType) UnmarshalText(text []byte) error {
+	if len(text) == 0 {
+		*a = ArchType{}
+		return nil
+	}
+	if string(text) == COMMON_VARIANT {
+		*a = Common
+		return nil
+	}
 	if u, ok := archTypeMap[string(text)]; ok {
 		*a = u
 		return nil

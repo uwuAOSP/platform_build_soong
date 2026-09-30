@@ -15,6 +15,7 @@
 package android
 
 import (
+	"encoding/json"
 	"reflect"
 	"runtime"
 	"testing"
@@ -33,6 +34,23 @@ type NamedAllFiltered struct {
 
 type NamedNoneFiltered struct {
 	A *string `android:"arch_variant"`
+}
+
+func TestArchTypeJSONRoundTrip(t *testing.T) {
+	for _, want := range []ArchType{{}, Common, Arm64} {
+		data, err := json.Marshal(want)
+		if err != nil {
+			t.Fatalf("json.Marshal(%#v): %v", want, err)
+		}
+
+		var got ArchType
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("json.Unmarshal(%s): %v", data, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("json round trip = %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestFilterArchStruct(t *testing.T) {
