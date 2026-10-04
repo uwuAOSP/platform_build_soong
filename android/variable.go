@@ -744,8 +744,9 @@ type PartitionVariables struct {
 	VendorLinkerConfigSrcs  []string                            `json:",omitempty"`
 	ProductLinkerConfigSrcs []string                            `json:",omitempty"`
 
-	BoardInfoFiles      []string `json:",omitempty"`
-	BootLoaderBoardName string   `json:",omitempty"`
+	BoardInfoFiles       []string `json:",omitempty"`
+	AndroidInfoExtraFile string   `json:",omitempty"`
+	BootLoaderBoardName  string   `json:",omitempty"`
 
 	ProductCopyFiles []string `json:",omitempty"`
 

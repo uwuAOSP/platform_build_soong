@@ -197,6 +197,7 @@ type androidDevice struct {
 	otaMetadata                 android.Path
 	partialOtaFilesZip          android.Path
 	androidInfoTxt              android.Path
+	androidInfoExtraTxt         android.Path
 	boardInfoTxt                android.Path
 
 	symbolsZipFile     android.ModuleOutPath
@@ -382,6 +383,20 @@ func (a *androidDevice) getAndroidInfoProvider(ctx android.ModuleContext) {
 	}
 }
 
+func (a *androidDevice) createAndroidInfoExtraTxt(ctx android.ModuleContext) android.Path {
+	output := android.PathForModuleOut(ctx, "android-info-extra.txt")
+	input := ctx.Config().ProductVariables().AndroidInfoExtraFile
+	if input == "" {
+		android.WriteFileRule(ctx, output, "")
+		return output
+	}
+	src := android.PathForSource(ctx, input)
+	builder := android.NewRuleBuilder(pctx, ctx).SandboxDisabled()
+	builder.Command().Text("sed '/#/d'").Input(src).Text(">").Output(output)
+	builder.Build("android_info_extra", "Generate android-info-extra.txt")
+	return output
+}
+
 func (a *androidDevice) getCustomPartitionFilesystemInfos(ctx android.ModuleContext) []FilesystemInfo {
 	var fsInfos []FilesystemInfo
 	for _, customPartition := range a.partitionProps.Custom_partitions {
@@ -435,6 +450,7 @@ func (a *androidDevice) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 
 	a.customPartitionFilesystemInfos = a.getCustomPartitionFilesystemInfos(ctx)
 	a.getAndroidInfoProvider(ctx)
+	a.androidInfoExtraTxt = a.createAndroidInfoExtraTxt(ctx)
 	a.apkCertsInfo = a.buildApkCertsInfo(ctx)
 	a.kernelVersion, a.kernelConfig = a.extractKernelVersionAndConfigs(ctx)
 	a.miscInfo = a.addMiscInfo(ctx)
@@ -1021,6 +1037,10 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 	if a.androidInfoTxt != nil {
 		builder.Command().Textf("mkdir -p %s/OTA", targetFilesDir)
 		builder.Command().Textf("cp ").Input(a.androidInfoTxt).Textf(" %s/OTA/android-info.txt", targetFilesDir)
+	}
+	if a.androidInfoExtraTxt != nil {
+		builder.Command().Textf("mkdir -p %s/OTA", targetFilesDir)
+		builder.Command().Textf("cp ").Input(a.androidInfoExtraTxt).Textf(" %s/OTA/android-info-extra.txt", targetFilesDir)
 	}
 	if ctx.Config().ProductVariables().AbOtaUpdater {
 		liblz4 := ctx.Config().HostCcSharedLibPath(ctx, "liblz4")

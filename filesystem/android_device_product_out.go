@@ -314,6 +314,15 @@ func (a *androidDevice) copyFilesToProductOutForSoongOnly(ctx android.ModuleCont
 		})
 		deps = append(deps, installPath)
 	}
+	if a.androidInfoExtraTxt != nil {
+		installPath := android.PathForModuleInPartitionInstall(ctx, "", "android-info-extra.txt")
+		ctx.Build(pctx, android.BuildParams{
+			Rule:   android.CpRule,
+			Input:  a.androidInfoExtraTxt,
+			Output: installPath,
+		})
+		deps = append(deps, installPath)
+	}
 
 	for _, pair := range a.stageDeviceFiles {
 		installPath := android.PathForModuleInPartitionInstall(ctx, "", pair.dst)
