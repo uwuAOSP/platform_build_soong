@@ -195,6 +195,28 @@ func TestFilesystemDirsForPartition(t *testing.T) {
 	}
 }
 
+func TestIsSubdirectory(t *testing.T) {
+	tests := []struct {
+		name   string
+		parent string
+		child  string
+		want   bool
+	}{
+		{name: "same directory", parent: "system", child: "system", want: true},
+		{name: "nested directory", parent: "system", child: "system/etc/file", want: true},
+		{name: "dot prefix directory", parent: "system", child: "system/..cache/file", want: true},
+		{name: "sibling prefix", parent: "system", child: "system_ext/file", want: false},
+		{name: "parent traversal", parent: "system", child: "system/../vendor/file", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isSubdirectory(tt.parent, tt.child); got != tt.want {
+				t.Errorf("isSubdirectory(%q, %q) = %t, want %t", tt.parent, tt.child, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestOdmManifestIsAddedToOdmFilesystemDeps(t *testing.T) {
 	result := android.GroupFixturePreparers(
 		android.PrepareForIntegrationTestWithAndroid,

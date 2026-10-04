@@ -63,7 +63,7 @@ func isSubdirectory(parent, child string) bool {
 	if err != nil {
 		return false
 	}
-	return !strings.HasPrefix(rel, "..")
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func appendIfCorrectInstallPartition(partitionToInstallPathList []partitionToInstallPath, destPath, srcPath, destOwner string, srcGroup *prebuiltSrcGroupByInstallPartition) {
