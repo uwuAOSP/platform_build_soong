@@ -1473,6 +1473,9 @@ func (a *androidDevice) createFastbootInfo(ctx android.ModuleContext) android.Pa
 	if a.partitionProps.Vendor_kernel_boot_partition_name != nil {
 		fastbootInfoString.WriteString("flash vendor_kernel_boot\n")
 	}
+	if a.partitionProps.Recovery_partition_name != nil {
+		fastbootInfoString.WriteString("flash recovery\n")
+	}
 	if a.deviceProps.Pvmfw.Image != nil {
 		fastbootInfoString.WriteString("flash pvmfw\n")
 	}
