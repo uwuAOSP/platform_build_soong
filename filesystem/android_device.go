@@ -1523,6 +1523,7 @@ func (a *androidDevice) createFastbootInfo(ctx android.ModuleContext) android.Pa
 		"system_ext",
 		"product",
 		"vendor",
+		"odm",
 		"vendor_dlkm",
 	} {
 		if _, exists := partitionsInSuper[partition]; exists {
