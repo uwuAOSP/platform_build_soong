@@ -188,6 +188,32 @@ func TestFilesystemDirsForPartition(t *testing.T) {
 	}
 }
 
+func TestOdmManifestIsAddedToOdmFilesystemDeps(t *testing.T) {
+	result := android.GroupFixturePreparers(
+		android.PrepareForIntegrationTestWithAndroid,
+		android.PrepareForTestWithAndroidBuildComponents,
+		android.PrepareForTestWithAllowMissingDependencies,
+		prepareForTestWithFsgenBuildComponents,
+		prepareMockRamdiksNodeList,
+		android.FixtureMergeMockFs(android.MockFS{
+			"external/avb/test/data/testkey_rsa4096.pem": nil,
+			"build/soong/fsgen/Android.bp": []byte(`
+			soong_filesystem_creator {
+				name: "foo",
+			}
+			`),
+		}),
+		android.FixtureModifyConfig(func(config android.Config) {
+			config.TestProductVariables.OdmManifestFiles = []string{"manifest_odm.xml"}
+		}),
+	).RunTestWithBp(t, "")
+
+	odmDeps := result.TestContext.Config().Get(fsGenStateOnceKey).(*FsGenState).fsDeps["odm"]
+	if _, ok := (*odmDeps)["odm_manifest.xml"]; !ok {
+		t.Fatal("odm_manifest.xml is not a dependency of the generated ODM filesystem")
+	}
+}
+
 func createProductPackagesSet(pkgs []string) map[string]android.ProductPackagesVariables {
 	productPackagesSet := make(map[string]android.ProductPackagesVariables)
 	productPackagesSet["all"] = android.ProductPackagesVariables{
