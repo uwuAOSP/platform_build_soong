@@ -160,6 +160,80 @@ func createBootImage16k(ctx android.LoadHookContext) bool {
 	return createBootImageCommon(ctx, partitionVariables.BoardKernelPath16k, "", dtbImg{include: false}, proptools.StringPtr("boot_16k.img"))
 }
 
+func createRecoveryBootImage(ctx android.LoadHookContext, dtbImg dtbImg) bool {
+	partitionVariables := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse
+	recoveryVariables := partitionVariables.PartitionQualifiedVariables["recovery"]
+	imageName := generatedModuleNameForPartition(ctx.Config(), "recovery-bootimg")
+	ramdiskName := generatedModuleNameForPartition(ctx.Config(), "recovery")
+
+	args := partitionVariables.BoardRecoveryMkbootimgArgs
+	headerVersion := partitionVariables.BoardBootHeaderVersion
+	argFields := strings.Fields(args)
+	for i := 0; i+1 < len(argFields); i++ {
+		if argFields[i] == "--header_version" {
+			headerVersion = argFields[i+1]
+			break
+		}
+	}
+	if headerVersion == "" {
+		ctx.ModuleErrorf("BOARD_RECOVERY_MKBOOTIMG_ARGS or BOARD_BOOT_HEADER_VERSION must set --header_version")
+		return false
+	}
+
+	var kernel string
+	if !partitionVariables.BoardExcludeKernelFromRecoveryImage {
+		kernel = soongKernelModule(ctx)
+		if kernel == "" {
+			kernel = getPrebuiltKernelPath(ctx)
+		}
+		if kernel == "" {
+			ctx.ModuleErrorf("recovery image requires a kernel unless BOARD_EXCLUDE_KERNEL_FROM_RECOVERY_IMAGE is true")
+			return false
+		}
+	}
+
+	var cmdline []string
+	if !partitionVariables.BoardExcludeKernelFromRecoveryImage && !buildingVendorBootImage(partitionVariables) {
+		cmdline = partitionVariables.InternalKernelCmdline
+	}
+	dtbPrebuilt, _ := dtbProperties(dtbImg, dtbImg.imgType)
+	avbInfo := getAvbInfo(ctx.Config(), "recovery")
+	partitionSize := getPartitionSizeFromString(ctx, recoveryVariables.BoardPartitionSize, "BOARD_RECOVERYIMAGE_PARTITION_SIZE")
+
+	ctx.CreateModule(
+		filesystem.BootimgFactory,
+		&filesystem.BootimgProperties{
+			Kernel_prebuilt: proptools.NewSimpleConfigurable(kernel),
+			Ramdisk_module:  proptools.StringPtr(ramdiskName),
+			Dtb_prebuilt:    dtbPrebuilt,
+			Cmdline:         cmdline,
+			Mkbootimg_args:  proptools.StringPtr(args),
+			Stem:            proptools.StringPtr("recovery.img"),
+		},
+		&filesystem.CommonBootimgProperties{
+			Boot_image_type:             proptools.StringPtr("recovery"),
+			Partition_name:              proptools.StringPtr("recovery"),
+			Header_version:              proptools.StringPtr(headerVersion),
+			Partition_size:              partitionSize,
+			Use_avb:                     avbInfo.avbEnable,
+			Avb_mode:                    avbInfo.avbMode,
+			Avb_private_key:             avbInfo.avbkeyFilegroup,
+			Avb_algorithm:               avbInfo.avbAlgorithm,
+			Avb_rollback_index:          avbInfo.avbRollbackIndex,
+			Avb_rollback_index_location: avbInfo.avbRollbackIndexLocation,
+			Avb_add_hash_footer_args:    proptools.StringPtr(recoveryVariables.BoardAvbAddHashFooterArgs),
+		},
+		&struct {
+			Name       *string
+			Visibility []string
+		}{
+			Name:       proptools.StringPtr(imageName),
+			Visibility: []string{"//visibility:public"},
+		},
+	)
+	return true
+}
+
 func getPartitionSizeFromString(ctx android.LoadHookContext, s string, name string) proptools.Configurable[int64] {
 	if s == "" {
 		return proptools.NewEmptyConfigurable[int64]()

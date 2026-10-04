@@ -138,6 +138,7 @@ type filesystemCreatorProps struct {
 	Vendor_boot_test_harness_image string   `blueprint:"mutated" android:"path_device_first"`
 	Vendor_kernel_boot_image       string   `blueprint:"mutated" android:"path_device_first"`
 	Init_boot_image                string   `blueprint:"mutated" android:"path_device_first"`
+	Recovery_image                 string   `blueprint:"mutated" android:"path_device_first"`
 	Super_image                    string   `blueprint:"mutated" android:"path_device_first"`
 	Radio_image                    string   `blueprint:"mutated" android:"path_device_first"`
 	Radio_partition_names          []string `blueprint:"mutated"`
@@ -348,6 +349,13 @@ func (f *filesystemCreator) createInternalModules(ctx android.LoadHookContext) {
 			f.properties.Unsupported_partition_types = append(f.properties.Unsupported_partition_types, "init_boot")
 		}
 	}
+	if ctx.DeviceConfig().BuildingRecoveryImage() && ctx.DeviceConfig().RecoveryPath() == "recovery" && !partitionVars.BoardUsesRecoveryAsBoot {
+		if createRecoveryBootImage(ctx, dtbImg) {
+			f.properties.Recovery_image = ":" + generatedModuleNameForPartition(ctx.Config(), "recovery-bootimg")
+		} else {
+			f.properties.Unsupported_partition_types = append(f.properties.Unsupported_partition_types, "recovery")
+		}
+	}
 	if partitionVars.BoardKernelPath16k != "" {
 		if createBootImage16k(ctx) {
 			f.properties.Boot_16k_image = ":" + generatedModuleNameForPartition(ctx.Config(), "boot_16k")
@@ -465,7 +473,6 @@ func (f *filesystemCreator) createSoongOnlyImageAliases(ctx android.LoadHookCont
 		{"system_dlkmimage", "system_dlkm"},
 		{"vendor_dlkmimage", "vendor_dlkm"},
 		{"odm_dlkmimage", "odm_dlkm"},
-		{"recoveryimage", "recovery"},
 		{"userdataimage", "userdata"},
 	} {
 		addAlias(image.alias, partitions.nameForType(image.typeName))
@@ -473,6 +480,13 @@ func (f *filesystemCreator) createSoongOnlyImageAliases(ctx android.LoadHookCont
 
 	addAlias("bootimage", f.properties.Boot_image)
 	addAlias("initbootimage", f.properties.Init_boot_image)
+	recoveryImage := f.properties.Recovery_image
+	if recoveryImage == "" {
+		if recoveryModule := partitions.nameForType("recovery"); recoveryModule != "" {
+			recoveryImage = ":" + recoveryModule
+		}
+	}
+	addAlias("recoveryimage", recoveryImage)
 	addAlias("vendorbootimage", f.properties.Vendor_boot_image)
 	addAlias("vendorkernelbootimage", f.properties.Vendor_kernel_boot_image)
 	addAlias("vendorbootimage_debug", f.properties.Vendor_boot_debug_image)
@@ -694,7 +708,11 @@ func (f *filesystemCreator) createDeviceModule(
 		partitionProps.Userdata_partition_name = proptools.StringPtr(modName)
 	}
 	if modName := partitions.nameForType("recovery"); modName != "" && !ctx.DeviceConfig().BoardMoveRecoveryResourcesToVendorBoot() {
-		partitionProps.Recovery_partition_name = proptools.StringPtr(modName)
+		if f.properties.Recovery_image != "" {
+			partitionProps.Recovery_partition_name = proptools.StringPtr(generatedModuleNameForPartition(ctx.Config(), "recovery-bootimg"))
+		} else {
+			partitionProps.Recovery_partition_name = proptools.StringPtr(modName)
+		}
 	}
 	if modName := partitions.nameForType("system_dlkm"); modName != "" && !android.InList("system_dlkm", superImageSubPartitions) {
 		partitionProps.System_dlkm_partition_name = proptools.StringPtr(modName)
@@ -1109,15 +1127,17 @@ func partitionSpecificFsProps(ctx android.EarlyModuleContext, partitions allGene
 		}
 
 		fsProps.Dirs = proptools.NewSimpleConfigurable(dirsWithRoot)
-		if partitionVars.BoardUsesRecoveryAsBoot {
-			fsProps.Type = proptools.NewSimpleConfigurable("compressed_cpio")
-			fsProps.Use_avb = nil
-		}
+		fsProps.Type = proptools.NewSimpleConfigurable("compressed_cpio")
+		fsProps.Use_avb = nil
 		fsProps.Symlinks = symlinksWithNamePrefix(append(commonSymlinksFromRoot, filesystem.SymlinkDefinition{
 			Target: proptools.StringPtr("prop.default"),
 			Name:   proptools.StringPtr("default.prop"),
 		}), "root")
-		fsProps.Stem = proptools.StringPtr("recovery.img")
+		if partitionVars.BoardUsesRecoveryAsBoot {
+			fsProps.Stem = proptools.StringPtr("recovery.img")
+		} else {
+			fsProps.Stem = proptools.StringPtr("recovery-ramdisk.img")
+		}
 	case "system_dlkm":
 		fsProps.Security_patch = proptools.StringPtr(partitionVars.SystemDlkmSecurityPatch)
 		fsProps.Stem = proptools.StringPtr("system_dlkm.img")

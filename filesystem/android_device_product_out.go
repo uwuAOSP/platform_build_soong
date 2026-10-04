@@ -399,6 +399,13 @@ func (a *androidDevice) getFsInfos(ctx android.ModuleContext) map[string]Filesys
 		if proptools.String(partitionDefinition.prop) != "" {
 			partition := ctx.GetDirectDepProxyWithTag(*partitionDefinition.prop, filesystemDepTag)
 			if info, ok := android.OtherModuleProvider(ctx, partition, FilesystemProvider); ok {
+				if partitionDefinition.ty == "recovery" {
+					if bootInfo, exists := android.OtherModuleProvider(ctx, partition, BootimgInfoProvider); exists {
+						info.Output = bootInfo.Output
+						info.SignedOutputPath = bootInfo.SignedOutput
+						info.PropFileForMiscInfo = bootInfo.PropFileForMiscInfo
+					}
+				}
 				filesystemInfos[partitionDefinition.ty] = info
 			} else {
 				ctx.ModuleErrorf("Super partition %s does not set FilesystemProvider\n", partition.Name())

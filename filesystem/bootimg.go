@@ -62,6 +62,9 @@ type BootimgProperties struct {
 	// Optional kernel commandline arguments
 	Cmdline []string `android:"arch_variant"`
 
+	// Additional arguments to mkbootimg. Used for recovery-specific board arguments.
+	Mkbootimg_args *string
+
 	// File that contains bootconfig parameters. This can be set only when `vendor_boot` is true
 	// and `header_version` is greater than or equal to 4.
 	Bootconfig *string `android:"arch_variant,path"`
@@ -75,7 +78,7 @@ type CommonBootimgProperties struct {
 	Header_version *string
 
 	// Determines the specific type of boot image this module is building. Can be boot,
-	// vendor_boot, vendor_kernel_boot or init_boot. Defaults to boot.
+	// vendor_boot, vendor_kernel_boot, recovery or init_boot. Defaults to boot.
 	// Refer to https://source.android.com/devices/bootloader/partitions/vendor-boot-partitions
 	// for vendor_boot.
 	// Refer to https://source.android.com/docs/core/architecture/partitions/generic-boot for
@@ -114,6 +117,9 @@ type CommonBootimgProperties struct {
 	// The security patch passed to as the com.android.build.<type>.security_patch avb property.
 	// Replacement for the make variables BOOT_SECURITY_PATCH / INIT_BOOT_SECURITY_PATCH.
 	Security_patch *string
+
+	// Additional arguments passed to avbtool add_hash_footer.
+	Avb_add_hash_footer_args *string
 }
 
 type bootImageType int
@@ -124,6 +130,7 @@ const (
 	vendorBoot
 	initBoot
 	vendorKernelBoot
+	recovery
 )
 
 func toBootImageType(ctx android.ModuleContext, bootImageType string) bootImageType {
@@ -136,8 +143,10 @@ func toBootImageType(ctx android.ModuleContext, bootImageType string) bootImageT
 		return initBoot
 	case "vendor_kernel_boot":
 		return vendorKernelBoot
+	case "recovery":
+		return recovery
 	default:
-		ctx.ModuleErrorf("Unknown boot_image_type %s. Must be one of \"boot\", \"vendor_boot\", \"vendor_kernel_boot\", or \"init_boot\"", bootImageType)
+		ctx.ModuleErrorf("Unknown boot_image_type %s. Must be one of \"boot\", \"vendor_boot\", \"vendor_kernel_boot\", \"recovery\", or \"init_boot\"", bootImageType)
 	}
 	return unsupported
 }
@@ -152,6 +161,8 @@ func (b bootImageType) String() string {
 		return "init_boot"
 	case vendorKernelBoot:
 		return "vendor_kernel_boot"
+	case recovery:
+		return "recovery"
 	default:
 		panic("unknown boot image type")
 	}
@@ -386,14 +397,17 @@ func (b *bootimg) buildBootImage(ctx android.ModuleContext, kernel android.Path)
 		cmd.FlagWithInput("--kernel ", kernel)
 	}
 
-	// These arguments are passed for boot.img and init_boot.img generation
-	if b.bootImageType.isBoot() || b.bootImageType.isInitBoot() {
+	// Make passes OS version and patch level to boot, init_boot, and recovery images.
+	if b.bootImageType.isBoot() || b.bootImageType.isInitBoot() || b.bootImageType == recovery {
 		cmd.FlagWithArg("--os_version ", ctx.Config().PlatformVersionLastStable())
 		cmd.FlagWithArg("--os_patch_level ", ctx.Config().PlatformSecurityPatch())
 	}
 
 	if b.getDtbPath(ctx) != nil {
 		cmd.FlagWithInput("--dtb ", b.getDtbPath(ctx))
+	}
+	if b.properties.Mkbootimg_args != nil {
+		cmd.Text(proptools.String(b.properties.Mkbootimg_args))
 	}
 	if pageSize := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardKernelPagesize; pageSize != "" {
 		cmd.FlagWithArg("--pagesize ", pageSize)
@@ -526,7 +540,7 @@ func (b *bootimg) addAvbFooter(ctx android.ModuleContext, unsignedImage android.
 		cmd.FlagWithInput("--key ", key)
 	}
 
-	if !b.bootImageType.isVendorBoot() && !b.bootImageType.isVendorKernelBoot() {
+	if !b.bootImageType.isVendorBoot() && !b.bootImageType.isVendorKernelBoot() && b.bootImageType != recovery {
 		cmd.FlagWithArg("--prop ", proptools.NinjaAndShellEscape(fmt.Sprintf(
 			"com.android.build.%s.os_version:%s", b.bootImageType.String(), ctx.Config().PlatformVersionLastStable())))
 	}
@@ -542,6 +556,12 @@ func (b *bootimg) addAvbFooter(ctx android.ModuleContext, unsignedImage android.
 
 	if b.commonProperties.Avb_rollback_index != nil {
 		cmd.FlagWithArg("--rollback_index ", strconv.FormatInt(*b.commonProperties.Avb_rollback_index, 10))
+	}
+	if b.commonProperties.Avb_rollback_index_location != nil {
+		cmd.FlagWithArg("--rollback_index_location ", strconv.FormatInt(*b.commonProperties.Avb_rollback_index_location, 10))
+	}
+	if b.commonProperties.Avb_add_hash_footer_args != nil {
+		cmd.Text(proptools.String(b.commonProperties.Avb_add_hash_footer_args))
 	}
 
 	builder.Build("add_avb_footer", fmt.Sprintf("Adding avb footer to %s", b.BaseModuleName()))
@@ -592,7 +612,7 @@ func (b *bootimg) buildPropFile(ctx android.ModuleContext) (android.Path, androi
 func (b *bootimg) getAvbHashFooterArgs(ctx android.ModuleContext) (string, android.Paths) {
 	var deps android.Paths
 	ret := ""
-	if !b.bootImageType.isVendorBoot() && !b.bootImageType.isVendorKernelBoot() {
+	if !b.bootImageType.isVendorBoot() && !b.bootImageType.isVendorKernelBoot() && b.bootImageType != recovery {
 		ret += "--prop " + fmt.Sprintf("com.android.build.%s.os_version:%s", b.bootImageType.String(), ctx.Config().PlatformVersionLastStable())
 	}
 
@@ -606,6 +626,12 @@ func (b *bootimg) getAvbHashFooterArgs(ctx android.ModuleContext) (string, andro
 
 	if b.commonProperties.Avb_rollback_index != nil {
 		ret += " --rollback_index " + strconv.FormatInt(*b.commonProperties.Avb_rollback_index, 10)
+	}
+	if b.commonProperties.Avb_rollback_index_location != nil {
+		ret += " --rollback_index_location " + strconv.FormatInt(*b.commonProperties.Avb_rollback_index_location, 10)
+	}
+	if b.commonProperties.Avb_add_hash_footer_args != nil {
+		ret += " " + proptools.String(b.commonProperties.Avb_add_hash_footer_args)
 	}
 	return strings.TrimSpace(ret), deps
 }

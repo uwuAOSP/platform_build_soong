@@ -1027,6 +1027,41 @@ android_filesystem {
 		"recovery_ramdisk/android_common/recovery/root")
 }
 
+func TestRecoveryBootimgWrapsAndSignsRecoveryRamdisk(t *testing.T) {
+	t.Parallel()
+	result := fixture.RunTestWithBp(t, `
+android_filesystem {
+	name: "recovery_ramdisk",
+	partition_name: "recovery",
+	partition_type: "recovery",
+	type: "compressed_cpio",
+	stem: "recovery-ramdisk.img",
+}
+bootimg {
+	name: "recovery_image",
+	boot_image_type: "recovery",
+	header_version: "4",
+	partition_name: "recovery",
+	partition_size: 104857600,
+	ramdisk_module: "recovery_ramdisk",
+	use_avb: true,
+	avb_mode: "make_legacy",
+	avb_private_key: "external/avb/test/data/testkey_rsa4096.pem",
+	avb_algorithm: "SHA256_RSA4096",
+	avb_rollback_index: 1,
+	avb_rollback_index_location: 1,
+	avb_add_hash_footer_args: "--hash_algorithm sha256",
+}`)
+	recovery := result.ModuleForTests(t, "recovery_image", "android_arm64_armv8-a")
+	mkbootimgCommand := recovery.Rule("build_bootimg").RuleParams.Command
+	android.AssertStringDoesContain(t, "recovery image omitted its ramdisk", mkbootimgCommand, "--ramdisk out/soong/.intermediates/recovery_ramdisk/android_common/recovery-ramdisk.img")
+	android.AssertStringDoesContain(t, "recovery image has the wrong partition type", mkbootimgCommand, "--header_version 4")
+	footerCommand := recovery.Rule("add_avb_footer").RuleParams.Command
+	android.AssertStringDoesContain(t, "recovery AVB footer uses the wrong partition name", footerCommand, "--partition_name recovery")
+	android.AssertStringDoesContain(t, "recovery AVB footer omitted rollback location", footerCommand, "--rollback_index_location 1")
+	android.AssertStringDoesContain(t, "recovery AVB footer omitted board arguments", footerCommand, "--hash_algorithm sha256")
+}
+
 func TestRamdiskFragmentInTargetFiles(t *testing.T) {
 	t.Parallel()
 	result := android.GroupFixturePreparers(
