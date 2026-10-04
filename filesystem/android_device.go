@@ -921,6 +921,9 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 		targetFilesZipCopy{a.partitionProps.Vendor_kernel_boot_partition_name, "VENDOR_KERNEL_BOOT/RAMDISK"},
 		targetFilesZipCopy{a.partitionProps.Userdata_partition_name, "DATA"},
 	}
+	if a.partitionProps.Recovery_partition_name != nil && !ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardUsesRecoveryAsBoot {
+		toCopy = append(toCopy, targetFilesZipCopy{a.partitionProps.Recovery_partition_name, "RECOVERY/RAMDISK"})
+	}
 
 	filesystemsToCopy := []targetFilesystemZipCopy{}
 	for _, zipCopy := range toCopy {
@@ -1031,6 +1034,28 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 		}
 		if bootImgInfo.Bootconfig != nil {
 			builder.Command().Textf("cp ").Input(bootImgInfo.Bootconfig).Textf(" %s/BOOT/bootconfig", targetFilesDir)
+		}
+	}
+	if a.partitionProps.Recovery_partition_name != nil && !ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardUsesRecoveryAsBoot {
+		recovery := ctx.GetDirectDepProxyWithTag(*a.partitionProps.Recovery_partition_name, filesystemDepTag)
+		recoveryInfo, ok := android.OtherModuleProvider(ctx, recovery, BootimgInfoProvider)
+		if !ok {
+			ctx.PropertyErrorf("recovery_partition_name", "Expected a BootimgInfoProvider")
+		} else {
+			builder.Command().Textf("mkdir -p %s/RECOVERY", targetFilesDir)
+			builder.Command().Textf("echo %s > %s/RECOVERY/cmdline", proptools.ShellEscape(strings.Join(recoveryInfo.Cmdline, " ")), targetFilesDir)
+			if base := ctx.Config().ProductVariables().BoardKernelBase; base != "" {
+				builder.Command().Textf("echo %s > %s/RECOVERY/base", proptools.ShellEscape(base), targetFilesDir)
+			}
+			if pagesize := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardKernelPagesize; pagesize != "" {
+				builder.Command().Textf("echo %s > %s/RECOVERY/pagesize", proptools.ShellEscape(pagesize), targetFilesDir)
+			}
+			if recoveryInfo.Kernel != nil {
+				builder.Command().Textf("cp ").Input(recoveryInfo.Kernel).Textf(" %s/RECOVERY/kernel", targetFilesDir)
+			}
+			if recoveryInfo.Dtb != nil {
+				builder.Command().Textf("cp ").Input(recoveryInfo.Dtb).Textf(" %s/RECOVERY/dtb", targetFilesDir)
+			}
 		}
 	}
 
@@ -1621,7 +1646,14 @@ func (a *androidDevice) addMiscInfo(ctx android.ModuleContext) android.Path {
 			Textf(" && echo multistage_support=1 >> %s", miscInfo).
 			Textf(" && echo blockimgdiff_versions=3,4 >> %s", miscInfo)
 	}
+	if a.partitionProps.Recovery_partition_name != nil {
+		args := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardRecoveryMkbootimgArgs
+		builder.Command().Textf("echo recovery_mkbootimg_args='%s' >> %s", args, miscInfo)
+	}
 	fsInfos := a.getFsInfos(ctx)
+	if ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardUsesFullRecoveryImage {
+		builder.Command().Textf("echo full_recovery_image=true >> %s", miscInfo)
+	}
 	if a.partitionProps.Super_partition_name != nil {
 		superPartition := ctx.GetDirectDepProxyWithTag(*a.partitionProps.Super_partition_name, superPartitionDepTag)
 		if info, ok := android.OtherModuleProvider(ctx, superPartition, SuperImageProvider); ok && info.SuperEmptyImage != nil {
