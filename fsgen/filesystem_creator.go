@@ -1795,8 +1795,7 @@ func generateFsProps(ctx android.EarlyModuleContext, partitions allGeneratedPart
 
 	// Match Make's image property dictionary: image timestamps are fixed only
 	// when requested for image files or target-files packaging.
-	useFixedTimestamp := ctx.Config().ProductVariables().UseFixedTimestampImgFiles ||
-		ctx.Config().ProductVariables().CopyImagesForTargetFilesZip
+	useFixedTimestamp := partitionVars.UseFixedTimestampImgFiles || partitionVars.CopyImagesForTargetFilesZip
 	fsProps.No_use_fixed_timestamp = proptools.BoolPtr(!useFixedTimestamp)
 
 	fsProps.Partition_name = proptools.StringPtr(partitionType)

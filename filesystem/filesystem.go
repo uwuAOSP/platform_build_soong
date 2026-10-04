@@ -853,7 +853,7 @@ func (f *filesystem) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 		if !usePrebuilt {
 			output := android.PathForModuleOut(ctx, f.installFileName())
 			if !ctx.Config().KatiEnabled() {
-				if configRoot, timestamp := f.buildFsConfigRoot(ctx); configRoot != nil {
+				if configRoot, timestamp := f.buildFsConfigRoot(ctx); configRoot.String() != "" {
 					fsConfigRootDir = configRoot
 					fsConfigRootTimestamp = timestamp
 				}
@@ -1077,7 +1077,7 @@ func (f *filesystem) buildFsConfigRoot(ctx android.ModuleContext) (android.Outpu
 		configCount++
 	})
 	if configCount == 0 {
-		return nil, nil
+		return android.OutputPath{}, nil
 	}
 	builder.Command().Text("touch").Output(timestamp)
 	builder.Build("assemble_fs_config_root", "Assemble explicit fs_config lookup inputs")

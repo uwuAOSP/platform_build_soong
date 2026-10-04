@@ -385,7 +385,7 @@ func (a *androidDevice) getAndroidInfoProvider(ctx android.ModuleContext) {
 
 func (a *androidDevice) createAndroidInfoExtraTxt(ctx android.ModuleContext) android.Path {
 	output := android.PathForModuleOut(ctx, "android-info-extra.txt")
-	input := ctx.Config().ProductVariables().AndroidInfoExtraFile
+	input := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.AndroidInfoExtraFile
 	if input == "" {
 		android.WriteFileRule(ctx, output, "")
 		return output
@@ -991,7 +991,7 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 		builder.Command().Textf("mkdir -p %s/VENDOR_BOOT", targetFilesDir)
 		builder.Command().Textf("echo %s > %s/VENDOR_BOOT/cmdline", proptools.ShellEscape(strings.Join(bootImgInfo.Cmdline, " ")), targetFilesDir)
 		builder.Command().Textf("echo %s > %s/VENDOR_BOOT/vendor_cmdline", proptools.ShellEscape(strings.Join(bootImgInfo.Cmdline, " ")), targetFilesDir)
-		if base := ctx.Config().ProductVariables().BoardKernelBase; base != "" {
+		if base := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardKernelBase; base != "" {
 			builder.Command().Textf("echo %s > %s/VENDOR_BOOT/base", proptools.ShellEscape(base), targetFilesDir)
 		}
 		if bootImgInfo.Dtb != nil {
@@ -1021,7 +1021,7 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 			ctx.PropertyErrorf("boot_partition_name", "Expected a BootimgInfoProvider")
 		}
 		builder.Command().Textf("mkdir -p %s/BOOT && echo %s > %s/BOOT/cmdline", targetFilesDir, proptools.ShellEscape(strings.Join(bootImgInfo.Cmdline, " ")), targetFilesDir)
-		if base := ctx.Config().ProductVariables().BoardKernelBase; base != "" {
+		if base := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardKernelBase; base != "" {
 			builder.Command().Textf("echo %s > %s/BOOT/base", proptools.ShellEscape(base), targetFilesDir)
 		}
 		if bootImgInfo.Dtb != nil {
@@ -1044,7 +1044,7 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 		} else {
 			builder.Command().Textf("mkdir -p %s/RECOVERY", targetFilesDir)
 			builder.Command().Textf("echo %s > %s/RECOVERY/cmdline", proptools.ShellEscape(strings.Join(recoveryInfo.Cmdline, " ")), targetFilesDir)
-			if base := ctx.Config().ProductVariables().BoardKernelBase; base != "" {
+			if base := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardKernelBase; base != "" {
 				builder.Command().Textf("echo %s > %s/RECOVERY/base", proptools.ShellEscape(base), targetFilesDir)
 			}
 			if pagesize := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardKernelPagesize; pagesize != "" {
@@ -1067,7 +1067,7 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 		builder.Command().Textf("mkdir -p %s/OTA", targetFilesDir)
 		builder.Command().Textf("cp ").Input(a.androidInfoExtraTxt).Textf(" %s/OTA/android-info-extra.txt", targetFilesDir)
 	}
-	if ctx.Config().ProductVariables().AbOtaUpdater {
+	if ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.AbOtaUpdater {
 		liblz4 := ctx.Config().HostCcSharedLibPath(ctx, "liblz4")
 		builder.Command().Textf("mkdir -p %s/META", targetFilesDir)
 		builder.Command().Textf("cp ").Input(liblz4).Textf(" %s/META/liblz4.so", targetFilesDir)
@@ -1401,7 +1401,7 @@ func (a *androidDevice) copyMetadataToTargetZip(ctx android.ModuleContext, build
 			// Create root_filesystem_config from the assembled ROOT/ intermediates directory
 			systemFsInfo := fsInfos["system"]
 			fsConfigRootDir := a.rootDirForFsConfig
-			if systemFsInfo.FsConfigRootDir != nil {
+			if systemFsInfo.FsConfigRootDir.String() != "" {
 				fsConfigRootDir = systemFsInfo.FsConfigRootDir.String()
 			}
 			a.generateFilesystemConfigForTargetFiles(ctx, builder, a.rootDirForFsConfigTimestamp, systemFsInfo.FsConfigRootTimestamp, targetFilesDir.String(), a.rootDirForFsConfig, fsConfigRootDir, "root_filesystem_config.txt")
