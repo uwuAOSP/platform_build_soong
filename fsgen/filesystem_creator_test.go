@@ -367,6 +367,7 @@ func TestPrebuiltEtcModuleGen(t *testing.T) {
 				"some/non/existing/file.txt:system/etc/file.txt",
 				"device/sample/etc/apns-full-conf.xml:product/etc/apns-conf.xml:google",
 				"device/sample/etc/apns-full-conf.xml:product/etc/apns-conf-2.xml",
+				"device/sample/etc/init/odm.rc:odm/etc/init/odm.rc",
 				"device/sample/etc/apns-full-conf.xml:system/foo/file.txt",
 				"device/sample/etc/apns-full-conf.xml:system/foo/apns-full-conf.xml",
 				"device/sample/firmware/firmware.bin:recovery/root/firmware.bin",
@@ -395,6 +396,7 @@ func TestPrebuiltEtcModuleGen(t *testing.T) {
 			"frameworks/base/data/keyboards/Vendor_0079_Product_0011.kl": nil,
 			"frameworks/base/data/keyboards/Vendor_0079_Product_18d4.kl": nil,
 			"device/sample/etc/apns-full-conf.xml":                       nil,
+			"device/sample/etc/init/odm.rc":                              nil,
 			"device/sample/firmware/firmware.bin":                        nil,
 			"packages/services/Car/car_product/init/init.car.rc":         nil,
 		}),
@@ -416,6 +418,14 @@ func TestPrebuiltEtcModuleGen(t *testing.T) {
 		!generatedModule.InstallInProduct() &&
 			!generatedModule.InstallInVendor() &&
 			!generatedModule.InstallInSystemExt(),
+	)
+
+	odmCopyModule := result.ModuleForTests(t, "odm-device_sample_etc-etc_init-0", "android_arm64_armv8-a").Module()
+	android.AssertBoolEquals(
+		t,
+		"PRODUCT_COPY_FILES destination under odm/ must be installed to the odm partition",
+		true,
+		odmCopyModule.InstallInOdm(),
 	)
 
 	// check generated prebuilt_* module specifies correct relative_install_path property

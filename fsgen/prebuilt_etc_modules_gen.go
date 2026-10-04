@@ -39,6 +39,7 @@ type prebuiltSrcGroupByInstallPartition struct {
 	system_ext     map[string][]srcBaseFileInstallBaseFileTuple
 	product        map[string][]srcBaseFileInstallBaseFileTuple
 	vendor         map[string][]srcBaseFileInstallBaseFileTuple
+	odm            map[string][]srcBaseFileInstallBaseFileTuple
 	recovery       map[string][]srcBaseFileInstallBaseFileTuple
 	vendor_dlkm    map[string][]srcBaseFileInstallBaseFileTuple
 	vendor_ramdisk map[string][]srcBaseFileInstallBaseFileTuple
@@ -50,6 +51,7 @@ func newPrebuiltSrcGroupByInstallPartition() *prebuiltSrcGroupByInstallPartition
 		system_ext:     map[string][]srcBaseFileInstallBaseFileTuple{},
 		product:        map[string][]srcBaseFileInstallBaseFileTuple{},
 		vendor:         map[string][]srcBaseFileInstallBaseFileTuple{},
+		odm:            map[string][]srcBaseFileInstallBaseFileTuple{},
 		recovery:       map[string][]srcBaseFileInstallBaseFileTuple{},
 		vendor_dlkm:    map[string][]srcBaseFileInstallBaseFileTuple{},
 		vendor_ramdisk: map[string][]srcBaseFileInstallBaseFileTuple{},
@@ -81,6 +83,8 @@ func appendIfCorrectInstallPartition(partitionToInstallPathList []partitionToIns
 				srcMap = srcGroup.product
 			case "vendor":
 				srcMap = srcGroup.vendor
+			case "odm":
+				srcMap = srcGroup.odm
 			case "recovery":
 				srcMap = srcGroup.recovery
 			case "vendor_dlkm":
@@ -158,6 +162,7 @@ func getPartitionToInstallPathList(ctx android.LoadHookContext) []partitionToIns
 	partitionToInstallPathList := []partitionToInstallPath{
 		{name: "recovery", installPath: "recovery/root"},
 		{name: "vendor", installPath: ctx.DeviceConfig().VendorPath()},
+		{name: "odm", installPath: ctx.DeviceConfig().OdmPath()},
 		{name: "vendor_dlkm", installPath: ctx.DeviceConfig().VendorDlkmPath()},
 		{name: "vendor_ramdisk", installPath: "vendor_ramdisk"},
 		{name: "product", installPath: ctx.DeviceConfig().ProductPath()},
@@ -194,6 +199,7 @@ type prebuiltModuleProperties struct {
 	From_product_copy_files *bool
 
 	Soc_specific                              *bool
+	Device_specific                           *bool
 	Product_specific                          *bool
 	System_ext_specific                       *bool
 	Vendor_dlkm_specific                      *bool
@@ -316,6 +322,8 @@ func prebuiltEtcModuleProps(ctx android.LoadHookContext, moduleName, partition, 
 		moduleProps.Product_specific = proptools.BoolPtr(true)
 	case "vendor":
 		moduleProps.Soc_specific = proptools.BoolPtr(true)
+	case "odm":
+		moduleProps.Device_specific = proptools.BoolPtr(true)
 	case "vendor_dlkm":
 		moduleProps.Vendor_dlkm_specific = proptools.BoolPtr(true)
 	case "vendor_ramdisk":
