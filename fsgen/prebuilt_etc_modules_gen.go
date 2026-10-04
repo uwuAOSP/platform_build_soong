@@ -136,15 +136,20 @@ func uniqueExistingProductCopyFileMap(ctx android.LoadHookContext) map[string][]
 		// Convert them to relative path from top and check if they do not escape the tree root.
 		relSrc := android.ToRelativeSourcePath(ctx, src)
 
-		if _, ok := seen[dest]; !ok {
-			if optionalPath := android.ExistentPathForSource(ctx, relSrc); optionalPath.Valid() {
-				seen[dest] = true
-				target := DestInfo{
-					DestPath: dest,
-					Owner:    owner, // Include the parsed owner
-				}
-				filtered[relSrc] = append(filtered[relSrc], target)
+		if _, ok := seen[dest]; ok {
+			continue
+		}
+		// Make reserves the destination for the first PRODUCT_COPY_FILES entry even
+		// when its source is missing. Do not let a later entry silently replace it.
+		seen[dest] = true
+		if optionalPath := android.ExistentPathForSource(ctx, relSrc); optionalPath.Valid() {
+			target := DestInfo{
+				DestPath: dest,
+				Owner:    owner,
 			}
+			filtered[relSrc] = append(filtered[relSrc], target)
+		} else {
+			ctx.ModuleErrorf("PRODUCT_COPY_FILES source %q for destination %q does not exist", src, dest)
 		}
 	}
 
