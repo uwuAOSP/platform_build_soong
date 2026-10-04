@@ -398,6 +398,9 @@ func (b *bootimg) buildBootImage(ctx android.ModuleContext, kernel android.Path)
 	if pageSize := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardKernelPagesize; pageSize != "" {
 		cmd.FlagWithArg("--pagesize ", pageSize)
 	}
+	if base := ctx.Config().ProductVariables().BoardKernelBase; base != "" {
+		cmd.FlagWithArg("--base ", base)
+	}
 
 	cmdline := strings.Join(b.properties.Cmdline, " ")
 	if cmdline != "" {

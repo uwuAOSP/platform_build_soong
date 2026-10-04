@@ -1029,7 +1029,12 @@ android_filesystem {
 
 func TestRamdiskFragmentInTargetFiles(t *testing.T) {
 	t.Parallel()
-	result := fixture.RunTestWithBp(t, `
+	result := android.GroupFixturePreparers(
+		fixture,
+		android.FixtureModifyConfig(func(config android.Config) {
+			config.TestProductVariables.BoardKernelBase = "0x00000000"
+		}),
+	).RunTestWithBp(t, `
 android_filesystem {
 	name: "vendor_ramdisk",
 	type: "compressed_cpio",
@@ -1055,4 +1060,7 @@ android_device {
 	vendorBootImg := result.ModuleForTests(t, "test_device", "android_arm64_armv8-a")
 	mkBootimgCmd := vendorBootImg.Rule("target_files_dir").RuleParams.Command
 	android.AssertStringDoesContain(t, "Did not find dlkm in vendor_ramdisk_fragments file used for target_files.zip creation", mkBootimgCmd, "echo dlkm > out/soong/.intermediates/test_device/android_arm64_armv8-a/target_files_dir/VENDOR_BOOT/vendor_ramdisk_fragments")
+	android.AssertStringDoesContain(t, "target_files omitted BOARD_KERNEL_BASE", mkBootimgCmd, "echo 0x00000000 > out/soong/.intermediates/test_device/android_arm64_armv8-a/target_files_dir/VENDOR_BOOT/base")
+	imageCmd := result.ModuleForTests(t, "vendor_boot", "android_arm64_armv8-a").Rule("build_bootimg").RuleParams.Command
+	android.AssertStringDoesContain(t, "mkbootimg omitted BOARD_KERNEL_BASE", imageCmd, "--base 0x00000000")
 }

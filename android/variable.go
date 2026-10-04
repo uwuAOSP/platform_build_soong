@@ -668,6 +668,7 @@ type PartitionVariables struct {
 	BoardBootimagePartitionSize       string   `json:",omitempty"`
 	BoardVendorBootimagePartitionSize string   `json:",omitempty"`
 	BoardKernelPagesize               string   `json:",omitempty"`
+	BoardKernelBase                   string   `json:",omitempty"`
 	BoardInitBootimagePartitionSize   string   `json:",omitempty"`
 	BoardBootHeaderVersion            string   `json:",omitempty"`
 	BoardInitBootHeaderVersion        string   `json:",omitempty"`
