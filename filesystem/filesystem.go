@@ -56,6 +56,7 @@ func registerBuildComponents(ctx android.RegistrationContext) {
 	ctx.RegisterModuleType("avb_gen_vbmeta_image", avbGenVbmetaImageFactory)
 	ctx.RegisterModuleType("avb_gen_vbmeta_image_defaults", avbGenVbmetaImageDefaultsFactory)
 	ctx.RegisterModuleType("bootimg", BootimgFactory)
+	ctx.RegisterModuleType("prebuilt_dtbo_img", PrebuiltDtboImgFactory)
 	ctx.RegisterModuleType("raw_binary", rawBinaryFactory)
 }
 
