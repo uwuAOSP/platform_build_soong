@@ -23,6 +23,7 @@ import (
 
 	"android/soong/android"
 	"android/soong/cc"
+	"android/soong/filesystem"
 	"android/soong/rust"
 
 	"github.com/google/blueprint/proptools"
@@ -163,6 +164,7 @@ type installationProperties struct {
 	RequiredBy          []string // List of modules (or PRODUCT_PACKAGES) that require this module to be installed
 	Overrides           []string
 	CcAndRustSharedLibs []string
+	FilesystemDirs      []string
 	Partition           string
 	Namespace           string
 	ArchType            android.ArchType
@@ -486,6 +488,10 @@ func collectDepsMutator(mctx android.BottomUpMutatorContext) {
 	// the module might be installed transitively.
 	if isEligibleForFsDeps(mctx) {
 		var ccAndRustSharedLibs []string
+		var filesystemDirs []string
+		if dirProvider, ok := m.(interface{ SoongFilesystemDirs() []string }); ok {
+			filesystemDirs = dirProvider.SoongFilesystemDirs()
+		}
 		if rustModule, ok := m.(*rust.Module); ok {
 			if !rustModule.StdLinkageIsRlibLinkage(mctx.Device()) {
 				for _, prop := range m.GetProperties() {
@@ -507,6 +513,7 @@ func collectDepsMutator(mctx android.BottomUpMutatorContext) {
 		fsGenState.moduleToInstallationProps.AddToMap(mctx, &installationProperties{
 			Required:            m.RequiredModuleNames(mctx),
 			CcAndRustSharedLibs: ccAndRustSharedLibs,
+			FilesystemDirs:      filesystemDirs,
 			Overrides:           m.Overrides(),
 			Partition:           m.PartitionTag(mctx.DeviceConfig()),
 			Namespace:           mctx.Namespace().Path,
@@ -617,7 +624,28 @@ func setDepsMutator(mctx android.BottomUpMutatorContext) {
 		if err := proptools.AppendMatchingProperties(m.GetProperties(), depsStruct, nil); err != nil {
 			mctx.ModuleErrorf(err.Error())
 		}
+		if !mctx.Config().KatiEnabled() {
+			dirs := filesystemDirsForPartition(fsGenState, partition)
+			if len(dirs) > 0 {
+				for _, prop := range m.GetProperties() {
+					if fsProps, ok := prop.(*filesystem.FilesystemProperties); ok {
+						fsProps.Dirs.AppendSimpleValue(dirs)
+						break
+					}
+				}
+			}
+		}
 	}
+}
+
+func filesystemDirsForPartition(fsGenState *FsGenState, partition string) []string {
+	var dirs []string
+	for _, moduleName := range fsGenState.fsDeps[partition].SortedFullyQualifiedNames() {
+		if props, ok := fsGenState.moduleToInstallationProps.GetFromFullyQualifiedModuleName(moduleName); ok {
+			dirs = append(dirs, props.FilesystemDirs...)
+		}
+	}
+	return android.SortedUniqueStrings(dirs)
 }
 
 // Adds override apps (override_android_app, override_apex, ...) to the partition of their `base` apps.

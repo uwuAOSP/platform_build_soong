@@ -15,6 +15,7 @@
 package fsgen
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -158,6 +159,33 @@ func TestFileSystemCreatorSystemImageProps(t *testing.T) {
 		"ext4",
 		fsProps.Type.GetOrDefault(evaluator, ""),
 	)
+}
+
+func TestFilesystemDirsForPartition(t *testing.T) {
+	fsGenState := &FsGenState{
+		fsDeps: map[string]*multilibDeps{
+			"vendor": {
+				"vendor_bt_firmware_mountpoint": {Namespace: "."},
+				"vendor_dsp_mountpoint":         {Namespace: "."},
+			},
+			"system": {
+				"system_mountpoint": {Namespace: "."},
+			},
+		},
+		moduleToInstallationProps: moduleToInstallationProps{
+			moduleToPropsMap: map[string]installationProperties{
+				"vendor_bt_firmware_mountpoint": {FilesystemDirs: []string{"bt_firmware"}},
+				"vendor_dsp_mountpoint":         {FilesystemDirs: []string{"dsp", "firmware_mnt"}},
+				"system_mountpoint":             {FilesystemDirs: []string{"system_only"}},
+			},
+		},
+	}
+
+	got := filesystemDirsForPartition(fsGenState, "vendor")
+	want := []string{"bt_firmware", "dsp", "firmware_mnt"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("filesystemDirsForPartition(vendor) = %v, want %v", got, want)
+	}
 }
 
 func createProductPackagesSet(pkgs []string) map[string]android.ProductPackagesVariables {
