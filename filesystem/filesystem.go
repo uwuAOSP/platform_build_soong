@@ -86,10 +86,10 @@ var (
 		SandboxDisabled: true,
 	})
 	fsConfigRule = pctx.AndroidStaticRule("fs_config_rule", blueprint.RuleParams{
-		Command:         `(cd ${rootDir}; find . -type d | sed 's,$$,/,'; find . \! -type d) | cut -c 3- | sort | sed 's,^,${prefix},' | ${fs_config} -C -D ${rootDir} -R "${prefix}" > ${out}`,
+		Command:         `(cd ${rootDir}; find . -type d | sed 's,$$,/,'; find . \! -type d) | cut -c 3- | sort | sed 's,^,${prefix},' | ${fs_config} -C -D ${targetOut} -R "${prefix}" > ${out}`,
 		CommandDeps:     []string{"${fs_config}"},
 		SandboxDisabled: true,
-	}, "rootDir", "prefix")
+	}, "rootDir", "targetOut", "prefix")
 	zipFiles = pctx.AndroidStaticRule("SnapshotZipFiles", blueprint.RuleParams{
 		Command:         `${SoongZipCmd}  -r $out.rsp -o $out`,
 		CommandDeps:     []string{"${SoongZipCmd}"},
@@ -557,6 +557,10 @@ type FilesystemInfo struct {
 	SelinuxFc android.Path
 
 	FilesystemConfig android.Path
+	// FsConfigRootDir contains explicit fs_config inputs arranged by partition.
+	// It is separate from image staging to avoid installing these lookup files.
+	FsConfigRootDir       android.OutputPath
+	FsConfigRootTimestamp android.Path
 
 	Owners depset.DepSet[InstalledModuleInfo]
 
@@ -833,6 +837,8 @@ func (f *filesystem) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 	var buildImagePropFile android.Path
 	var buildImagePropFileDeps android.Paths
 	var extraRootDirs android.Paths
+	fsConfigRootDir := rootDir
+	var fsConfigRootTimestamp android.Path
 	var propFileForMiscInfo android.Path
 	cpioRootDir := rootDir
 	if f.partitionName() == "recovery" {
@@ -846,7 +852,20 @@ func (f *filesystem) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 		// TODO: remove this once android_system_image_prebuilt correctly implements prop files.
 		if !usePrebuilt {
 			output := android.PathForModuleOut(ctx, f.installFileName())
-			f.buildImageUsingBuildImage(ctx, builder, buildImageParams{rootDir, buildImagePropFile, buildImagePropFileDeps, output})
+			if !ctx.Config().KatiEnabled() {
+				if configRoot, timestamp := f.buildFsConfigRoot(ctx); configRoot != nil {
+					fsConfigRootDir = configRoot
+					fsConfigRootTimestamp = timestamp
+				}
+			}
+			f.buildImageUsingBuildImage(ctx, builder, buildImageParams{
+				rootDir:               rootDir,
+				propFile:              buildImagePropFile,
+				toolDeps:              buildImagePropFileDeps,
+				output:                output,
+				fsConfigRootDir:       fsConfigRootDir,
+				fsConfigRootTimestamp: fsConfigRootTimestamp,
+			})
 			f.output = output
 		} else {
 			f.output = prebuiltInfo.Output
@@ -932,9 +951,11 @@ func (f *filesystem) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 			installedFilesStructList,
 			includeFilesInstalledFiles(ctx),
 		),
-		ErofsCompressHints: erofsCompressHints,
-		SelinuxFc:          f.selinuxFc,
-		FilesystemConfig:   f.generateFilesystemConfig(ctx, rootDir, rebasedDir),
+		ErofsCompressHints:    erofsCompressHints,
+		SelinuxFc:             f.selinuxFc,
+		FilesystemConfig:      f.generateFilesystemConfig(ctx, rootDir, rebasedDir, fsConfigRootDir, fsConfigRootTimestamp),
+		FsConfigRootDir:       fsConfigRootDir,
+		FsConfigRootTimestamp: fsConfigRootTimestamp,
 		Owners: depset.New(
 			depset.POSTORDER,
 			f.gatherOwners(specs),
@@ -993,7 +1014,7 @@ func (f *filesystem) fileystemStagingDirTimestamp(ctx android.ModuleContext) and
 	return android.PathForModuleOut(ctx, "staging_dir.timestamp")
 }
 
-func (f *filesystem) generateFilesystemConfig(ctx android.ModuleContext, rootDir android.Path, rebasedDir android.Path) android.Path {
+func (f *filesystem) generateFilesystemConfig(ctx android.ModuleContext, rootDir android.Path, rebasedDir android.Path, fsConfigRootDir android.OutputPath, fsConfigRootTimestamp android.Path) android.Path {
 	rootDirString := rootDir.String()
 	prefix := f.partitionName() + "/"
 	if f.partitionName() == "system" {
@@ -1005,16 +1026,62 @@ func (f *filesystem) generateFilesystemConfig(ctx android.ModuleContext, rootDir
 		prefix = ""
 	}
 	out := android.PathForModuleOut(ctx, "filesystem_config.txt")
+	var implicitPaths android.Paths
+	if fsConfigRootTimestamp != nil {
+		implicitPaths = append(implicitPaths, fsConfigRootTimestamp)
+	}
 	ctx.Build(pctx, android.BuildParams{
-		Rule:   fsConfigRule,
-		Input:  f.fileystemStagingDirTimestamp(ctx), // assemble the staging directory
-		Output: out,
+		Rule:      fsConfigRule,
+		Input:     f.fileystemStagingDirTimestamp(ctx), // assemble the staging directory
+		Implicits: implicitPaths,
+		Output:    out,
 		Args: map[string]string{
-			"rootDir": rootDirString,
-			"prefix":  prefix,
+			"rootDir":   rootDirString,
+			"targetOut": fsConfigRootDir.String(),
+			"prefix":    prefix,
 		},
 	})
 	return out
+}
+
+func (f *filesystem) buildFsConfigRoot(ctx android.ModuleContext) (android.OutputPath, android.Path) {
+	rootDir := android.PathForModuleOut(ctx, "fs_config_root").OutputPath
+	timestamp := android.PathForModuleOut(ctx, "fs_config_root.timestamp")
+	builder := android.NewRuleBuilder(pctx, ctx).SandboxDisabled()
+	builder.Command().Text("rm -rf").Text(rootDir.String()).Text("&& mkdir -p").Text(rootDir.String())
+	configCount := 0
+	ctx.VisitDirectDepsProxy(func(dep android.ModuleProxy) {
+		name := dep.Name()
+		var partition, filename string
+		if strings.HasPrefix(name, "fs_config_files_") {
+			partition = strings.TrimPrefix(name, "fs_config_files_")
+			filename = "fs_config_files"
+		} else if strings.HasPrefix(name, "fs_config_dirs_") {
+			partition = strings.TrimPrefix(name, "fs_config_dirs_")
+			filename = "fs_config_dirs"
+		} else {
+			return
+		}
+		outputs := android.GetOutputFiles(ctx, dep)
+		if outputs == nil || len(outputs.DefaultOutputFiles) == 0 {
+			ctx.ModuleErrorf("fs_config module %s does not provide an output", name)
+			return
+		}
+		if len(outputs.DefaultOutputFiles) != 1 {
+			ctx.ModuleErrorf("fs_config module %s provides %d outputs, expected one", name, len(outputs.DefaultOutputFiles))
+			return
+		}
+		output := android.PathForModuleOut(ctx, "fs_config_root", partition, "etc", filename)
+		builder.Command().Text("mkdir -p").Text(filepath.Dir(output.String()))
+		builder.Command().Text("cp").Input(outputs.DefaultOutputFiles[0]).Output(output)
+		configCount++
+	})
+	if configCount == 0 {
+		return nil, nil
+	}
+	builder.Command().Text("touch").Output(timestamp)
+	builder.Build("assemble_fs_config_root", "Assemble explicit fs_config lookup inputs")
+	return rootDir, timestamp
 }
 
 func (f *filesystem) setVbmetaPartitionProvider(ctx android.ModuleContext) {
@@ -1310,9 +1377,11 @@ func (f *filesystem) verifyGenericConfig(ctx android.ModuleContext) {
 
 type buildImageParams struct {
 	// inputs
-	rootDir  android.OutputPath
-	propFile android.Path
-	toolDeps android.Paths
+	rootDir               android.OutputPath
+	propFile              android.Path
+	toolDeps              android.Paths
+	fsConfigRootDir       android.OutputPath
+	fsConfigRootTimestamp android.Path
 	// outputs
 	output android.WritablePath
 }
@@ -1338,16 +1407,18 @@ func (f *filesystem) buildImageUsingBuildImage(
 	fec := ctx.Config().HostToolPath(ctx, "fec")
 	pathToolDirs := []string{filepath.Dir(fec.String())}
 
-	builder.Command().
+	buildImageCommand := builder.Command().
 		Textf("PATH=%s:$PATH", strings.Join(pathToolDirs, ":")).
 		BuiltTool("build_image").
 		Text(params.rootDir.String()). // input directory
 		Input(params.propFile).
 		Implicits(params.toolDeps).
 		Implicit(fec).
-		Implicit(f.fileystemStagingDirTimestamp(ctx)). // assemble the staging directory
-		Output(params.output).
-		Text(params.rootDir.String()) // directory where to find fs_config_files|dirs
+		Implicit(f.fileystemStagingDirTimestamp(ctx)) // assemble the staging directory
+	if params.fsConfigRootTimestamp != nil {
+		buildImageCommand.Implicit(params.fsConfigRootTimestamp)
+	}
+	buildImageCommand.Output(params.output).Text(params.fsConfigRootDir.String()) // directory where to find fs_config_files|dirs
 
 	if f.properties.Partition_size != nil {
 		assertMaxImageSize(builder, params.output, *f.properties.Partition_size, false)

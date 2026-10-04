@@ -621,6 +621,29 @@ func setDepsMutator(mctx android.BottomUpMutatorContext) {
 		// created by other deps of recovery.img.
 		// Use this in highPriorityDeps
 		depsStruct := generateDepStruct(*fsDeps[partition], append([]string{backgroundRecoveryImageGenerator}, fsGenState.generatedPrebuiltEtcModuleNames...), overriddenDeps)
+		if !mctx.Config().KatiEnabled() {
+			depsStruct.Deps = append(depsStruct.Deps,
+				"fs_config_files_system",
+				"fs_config_files_system_ext",
+				"fs_config_files_product",
+				"fs_config_files_vendor",
+				"fs_config_files_oem",
+				"fs_config_files_odm",
+				"fs_config_files_system_dlkm",
+				"fs_config_files_vendor_dlkm",
+				"fs_config_files_odm_dlkm",
+				"fs_config_dirs_system",
+				"fs_config_dirs_system_ext",
+				"fs_config_dirs_product",
+				"fs_config_dirs_vendor",
+				"fs_config_dirs_oem",
+				"fs_config_dirs_odm",
+				"fs_config_dirs_system_dlkm",
+				"fs_config_dirs_vendor_dlkm",
+				"fs_config_dirs_odm_dlkm",
+			)
+			depsStruct.Deps = android.SortedUniqueStrings(depsStruct.Deps)
+		}
 		if err := proptools.AppendMatchingProperties(m.GetProperties(), depsStruct, nil); err != nil {
 			mctx.ModuleErrorf(err.Error())
 		}

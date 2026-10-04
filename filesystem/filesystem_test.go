@@ -138,6 +138,38 @@ func TestFileSystemDeps(t *testing.T) {
 	}
 }
 
+func TestFilesystemUsesExplicitFsConfigInputs(t *testing.T) {
+	t.Parallel()
+	result := fixture.RunTestWithBp(t, `
+		android_filesystem {
+			name: "myvendor",
+			partition_type: "vendor",
+			deps: ["fs_config_files_vendor", "fs_config_dirs_vendor"],
+		}
+
+		prebuilt_etc {
+			name: "fs_config_files_vendor",
+			filename: "fs_config_files",
+			src: "vendor_fs_config_files",
+			vendor: true,
+		}
+
+		prebuilt_etc {
+			name: "fs_config_dirs_vendor",
+			filename: "fs_config_dirs",
+			src: "vendor_fs_config_dirs",
+			vendor: true,
+		}
+	`)
+	fsModule := result.ModuleForTests(t, "myvendor", "android_common")
+	rootRule := fsModule.Description("Assemble explicit fs_config lookup inputs")
+	android.AssertStringDoesContain(t, "vendor file config is not staged in the separate lookup tree", rootRule.RuleParams.Command, "fs_config_root/vendor/etc/fs_config_files")
+	android.AssertStringDoesContain(t, "vendor directory config is not staged in the separate lookup tree", rootRule.RuleParams.Command, "fs_config_root/vendor/etc/fs_config_dirs")
+	fsConfigCmd := fsModule.Rule("fs_config_rule").RuleParams.Command
+	android.AssertStringDoesContain(t, "filesystem_config does not use the explicit config lookup tree", fsConfigCmd, "-D ")
+	android.AssertStringDoesContain(t, "filesystem_config does not reference fs_config_root", fsConfigCmd, "fs_config_root")
+}
+
 func TestFileSystemFillsLinkerConfigWithStubLibs(t *testing.T) {
 	t.Parallel()
 	result := fixture.RunTestWithBp(t, `

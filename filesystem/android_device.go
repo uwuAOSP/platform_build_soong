@@ -1347,7 +1347,12 @@ func (a *androidDevice) copyMetadataToTargetZip(ctx android.ModuleContext, build
 		}
 		if partition == "system" {
 			// Create root_filesystem_config from the assembled ROOT/ intermediates directory
-			a.generateFilesystemConfigForTargetFiles(ctx, builder, a.rootDirForFsConfigTimestamp, targetFilesDir.String(), a.rootDirForFsConfig, "root_filesystem_config.txt")
+			systemFsInfo := fsInfos["system"]
+			fsConfigRootDir := a.rootDirForFsConfig
+			if systemFsInfo.FsConfigRootDir != nil {
+				fsConfigRootDir = systemFsInfo.FsConfigRootDir.String()
+			}
+			a.generateFilesystemConfigForTargetFiles(ctx, builder, a.rootDirForFsConfigTimestamp, systemFsInfo.FsConfigRootTimestamp, targetFilesDir.String(), a.rootDirForFsConfig, fsConfigRootDir, "root_filesystem_config.txt")
 		}
 		if partition == "vendor_ramdisk" {
 			// Create vendor_boot_filesystem_config from the assembled VENDOR_BOOT/RAMDISK intermediates directory
@@ -1857,15 +1862,23 @@ type ApexKeyPathInfo struct {
 
 var ApexKeyPathInfoProvider = blueprint.NewProvider[ApexKeyPathInfo]()
 
-func (a *androidDevice) generateFilesystemConfigForTargetFiles(ctx android.ModuleContext, builder *android.RuleBuilder, stagingDirTimestamp android.Path, targetFilesDir, stagingDir, filename string) {
+func (a *androidDevice) generateFilesystemConfigForTargetFiles(ctx android.ModuleContext, builder *android.RuleBuilder, stagingDirTimestamp, fsConfigRootTimestamp android.Path, targetFilesDir, stagingDir, fsConfigRootDir, filename string) {
 	fsConfigOut := android.PathForModuleOut(ctx, filename)
+	var implicitPaths android.Paths
+	if stagingDirTimestamp != nil {
+		implicitPaths = append(implicitPaths, stagingDirTimestamp)
+	}
+	if fsConfigRootTimestamp != nil {
+		implicitPaths = append(implicitPaths, fsConfigRootTimestamp)
+	}
 	ctx.Build(pctx, android.BuildParams{
-		Rule:     fsConfigRule,
-		Implicit: stagingDirTimestamp,
-		Output:   fsConfigOut,
+		Rule:      fsConfigRule,
+		Implicits: implicitPaths,
+		Output:    fsConfigOut,
 		Args: map[string]string{
-			"rootDir": stagingDir,
-			"prefix":  "",
+			"rootDir":   stagingDir,
+			"targetOut": fsConfigRootDir,
+			"prefix":    "",
 		},
 	})
 	builder.Command().Textf("cp").Input(fsConfigOut).Textf(" %s/META/", targetFilesDir)
