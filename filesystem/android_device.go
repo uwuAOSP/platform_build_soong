@@ -1022,6 +1022,11 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 		builder.Command().Textf("mkdir -p %s/OTA", targetFilesDir)
 		builder.Command().Textf("cp ").Input(a.androidInfoTxt).Textf(" %s/OTA/android-info.txt", targetFilesDir)
 	}
+	if ctx.Config().ProductVariables().AbOtaUpdater {
+		liblz4 := ctx.Config().HostCcSharedLibPath(ctx, "liblz4")
+		builder.Command().Textf("mkdir -p %s/META", targetFilesDir)
+		builder.Command().Textf("cp ").Input(liblz4).Textf(" %s/META/liblz4.so", targetFilesDir)
+	}
 
 	builder.Command().Textf("mkdir -p %s/IMAGES", targetFilesDir.String())
 	if a.deviceProps.Bootloader != nil {
