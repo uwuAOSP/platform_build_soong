@@ -483,6 +483,7 @@ func createPrebuiltEtcModules(ctx android.LoadHookContext) (ret []string) {
 		ret = append(ret, createPrebuiltEtcModulesForPartition(ctx, "system_ext", srcDir, groupedSource.system_ext)...)
 		ret = append(ret, createPrebuiltEtcModulesForPartition(ctx, "product", srcDir, groupedSource.product)...)
 		ret = append(ret, createPrebuiltEtcModulesForPartition(ctx, "vendor", srcDir, groupedSource.vendor)...)
+		ret = append(ret, createPrebuiltEtcModulesForPartition(ctx, "odm", srcDir, groupedSource.odm)...)
 		ret = append(ret, createPrebuiltEtcModulesForPartition(ctx, "recovery", srcDir, groupedSource.recovery)...)
 		ret = append(ret, createPrebuiltEtcModulesForPartition(ctx, "vendor_dlkm", srcDir, groupedSource.vendor_dlkm)...)
 		ret = append(ret, createPrebuiltEtcModulesForPartition(ctx, "vendor_ramdisk", srcDir, groupedSource.vendor_ramdisk)...)
