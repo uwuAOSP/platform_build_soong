@@ -598,6 +598,7 @@ type PartitionQualifiedVariablesType struct {
 	BoardAvbAlgorithm             string `json:",omitempty"`
 	BoardAvbRollbackIndex         string `json:",omitempty"`
 	BoardAvbRollbackIndexLocation string `json:",omitempty"`
+	BoardAvbAddHashFooterArgs     string `json:",omitempty"`
 }
 
 type BoardSuperPartitionGroupProps struct {

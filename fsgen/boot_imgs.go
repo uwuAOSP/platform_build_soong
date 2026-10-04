@@ -661,15 +661,17 @@ func createPrebuiltDtboImages(ctx android.LoadHookContext) (string, string) {
 				Avb_algorithm               *string
 				Avb_rollback_index          *int64
 				Avb_rollback_index_location *int64
+				Avb_add_hash_footer_args    *string
 			}{
 				Name:                        proptools.StringPtr(dtboModuleName),
 				Src:                         proptools.StringPtr(src),
 				Partition_size:              proptools.Int64Ptr(size),
-				Use_avb:                     avbInfo.avbEnable,
+				Use_avb:                     proptools.BoolPtr(avbInfo.avbEnable != nil && *avbInfo.avbEnable),
 				Avb_private_key:             avbInfo.avbkeyFilegroup,
 				Avb_algorithm:               avbInfo.avbAlgorithm,
 				Avb_rollback_index:          avbInfo.avbRollbackIndex,
 				Avb_rollback_index_location: avbInfo.avbRollbackIndexLocation,
+				Avb_add_hash_footer_args:    proptools.StringPtr(partitionVars.PartitionQualifiedVariables["dtbo"].BoardAvbAddHashFooterArgs),
 			},
 		)
 	}

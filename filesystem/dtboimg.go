@@ -41,6 +41,7 @@ type prebuiltDtboImgProperties struct {
 	Avb_algorithm               *string
 	Avb_rollback_index          *int64
 	Avb_rollback_index_location *int64
+	Avb_add_hash_footer_args    *string
 }
 
 func PrebuiltDtboImgFactory() android.Module {
@@ -123,6 +124,9 @@ func (p *prebuiltDtboImg) avbAddHash(ctx android.ModuleContext, input android.Pa
 	if p.properties.Avb_rollback_index_location != nil {
 		cmd.FlagWithArg("--rollback_index_location ", strconv.FormatInt(*p.properties.Avb_rollback_index_location, 10))
 	}
+	if p.properties.Avb_add_hash_footer_args != nil {
+		cmd.Text(proptools.String(p.properties.Avb_add_hash_footer_args))
+	}
 	fingerprintFile := ctx.Config().BuildFingerprintFile(ctx)
 	cmd.FlagWithArg("--prop ", fmt.Sprintf("com.android.build.dtbo.fingerprint:$(cat %s)", fingerprintFile.String())).Implicit(fingerprintFile)
 
@@ -141,11 +145,7 @@ func (p *prebuiltDtboImg) buildPropFileForMiscInfo(ctx android.ModuleContext) an
 	if p.properties.Partition_size != nil {
 		addStr("dtbo_size", strconv.FormatInt(*p.properties.Partition_size, 10))
 	}
-	fingerprintFile := ctx.Config().BuildFingerprintFile(ctx)
-	footerArgs := "--prop " + fmt.Sprintf("com.android.build.dtbo.fingerprint:{CONTENTS_OF:%s}", fingerprintFile.String())
-	if p.properties.Avb_rollback_index != nil {
-		footerArgs += " --rollback_index " + strconv.FormatInt(*p.properties.Avb_rollback_index, 10)
-	}
+	footerArgs := proptools.StringDefault(p.properties.Avb_add_hash_footer_args, "")
 	addStr("avb_dtbo_add_hash_footer_args", footerArgs)
 	if p.properties.Avb_algorithm != nil {
 		addStr("avb_dtbo_algorithm", proptools.String(p.properties.Avb_algorithm))
@@ -161,10 +161,9 @@ func (p *prebuiltDtboImg) buildPropFileForMiscInfo(ctx android.ModuleContext) an
 	android.WriteFileRuleVerbatim(ctx, propFilePreProcessing, sb.String())
 	propFile := android.PathForModuleOut(ctx, "prop_file_for_misc_info")
 	ctx.Build(pctx, android.BuildParams{
-		Rule:     textFileProcessorRule,
-		Input:    propFilePreProcessing,
-		Output:   propFile,
-		Implicit: fingerprintFile,
+		Rule:   textFileProcessorRule,
+		Input:  propFilePreProcessing,
+		Output: propFile,
 	})
 
 	return propFile

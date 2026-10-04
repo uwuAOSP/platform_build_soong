@@ -297,6 +297,27 @@ func TestAvbAddHashFooter(t *testing.T) {
 		cmd, "--include_descriptors_from_image ")
 }
 
+func TestPrebuiltDtboUsesBoardAvbFooterArgs(t *testing.T) {
+	t.Parallel()
+	result := fixture.RunTestWithBp(t, `
+		prebuilt_dtbo_img {
+			name: "mydtbo",
+			src: "dtbo.img",
+			partition_size: 4096,
+			use_avb: true,
+			avb_private_key: "testkey.pem",
+			avb_algorithm: "SHA256_RSA4096",
+			avb_rollback_index: 12,
+			avb_rollback_index_location: 3,
+			avb_add_hash_footer_args: "--prop custom:value",
+		}
+	`)
+	cmd := result.ModuleForTests(t, "mydtbo", "android_arm64_armv8-a").Rule("add_hash_footer").RuleParams.Command
+	android.AssertStringDoesContain(t, "missing DTBO key argument", cmd, "--key testkey.pem")
+	android.AssertStringDoesContain(t, "missing DTBO rollback index location", cmd, "--rollback_index_location 3")
+	android.AssertStringDoesContain(t, "missing BOARD_AVB_DTBO_ADD_HASH_FOOTER_ARGS", cmd, "--prop custom:value")
+}
+
 func TestFileSystemWithCoverageVariants(t *testing.T) {
 	t.Parallel()
 	context := android.GroupFixturePreparers(
