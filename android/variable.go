@@ -650,6 +650,7 @@ type PartitionVariables struct {
 	BoardFlashEraseBlockSize       string `json:",omitempty"`
 	ProductUseDynamicPartitionSize bool   `json:",omitempty"`
 	CopyImagesForTargetFilesZip    bool   `json:",omitempty"`
+	UseFixedTimestampImgFiles      bool   `json:",omitempty"`
 
 	VendorSecurityPatch     string `json:",omitempty"`
 	OdmSecurityPatch        string `json:",omitempty"`

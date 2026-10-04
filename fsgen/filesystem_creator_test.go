@@ -94,6 +94,7 @@ func TestFileSystemCreatorSystemImageProps(t *testing.T) {
 		filesystem.PrepareForTestWithFilesystemBuildComponents,
 		prepareForTestWithFsgenBuildComponents,
 		android.FixtureModifyConfig(func(config android.Config) {
+			config.TestProductVariables.UseFixedTimestampImgFiles = true
 			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.BoardAvbEnable = true
 			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.PartitionQualifiedVariables =
 				map[string]android.PartitionQualifiedVariablesType{
@@ -158,6 +159,12 @@ func TestFileSystemCreatorSystemImageProps(t *testing.T) {
 		"Property expected to match the product variable 'BOARD_SYSTEMIMAGE_FILE_SYSTEM_TYPE'",
 		"ext4",
 		fsProps.Type.GetOrDefault(evaluator, ""),
+	)
+	android.AssertBoolEquals(
+		t,
+		"Fixed image timestamps should follow the Make product variable",
+		false,
+		proptools.Bool(fsProps.No_use_fixed_timestamp),
 	)
 }
 

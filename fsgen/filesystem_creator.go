@@ -1772,9 +1772,11 @@ func generateFsProps(ctx android.EarlyModuleContext, partitions allGeneratedPart
 	fsProps.Rollback_index_location = avbInfo.avbRollbackIndexLocation
 	fsProps.Avb_hash_algorithm = avbInfo.avbHashAlgorithm
 
-	// Do not use a fixed timestamp.
-	// This prevents a full push on the first adb sync.
-	fsProps.No_use_fixed_timestamp = proptools.BoolPtr(true)
+	// Match Make's image property dictionary: image timestamps are fixed only
+	// when requested for image files or target-files packaging.
+	useFixedTimestamp := ctx.Config().ProductVariables().UseFixedTimestampImgFiles ||
+		ctx.Config().ProductVariables().CopyImagesForTargetFilesZip
+	fsProps.No_use_fixed_timestamp = proptools.BoolPtr(!useFixedTimestamp)
 
 	fsProps.Partition_name = proptools.StringPtr(partitionType)
 
