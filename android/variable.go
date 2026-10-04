@@ -449,7 +449,8 @@ type ProductVariables struct {
 	BoardKernelBinaries                []string `json:",omitempty"`
 	BoardKernelModuleInterfaceVersions []string `json:",omitempty"`
 
-	BoardMoveRecoveryResourcesToVendorBoot *bool `json:",omitempty"`
+	BoardMoveRecoveryResourcesToVendorBoot  *bool `json:",omitempty"`
+	BoardIncludeRecoveryRamdiskInVendorBoot *bool `json:",omitempty"`
 
 	PrebuiltHiddenApiDir *string `json:",omitempty"`
 

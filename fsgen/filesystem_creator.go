@@ -1127,7 +1127,10 @@ func partitionSpecificFsProps(ctx android.EarlyModuleContext, partitions allGene
 		fsProps.Security_patch = proptools.StringPtr(partitionVars.OdmDlkmSecurityPatch)
 		fsProps.Stem = proptools.StringPtr("odm_dlkm.img")
 	case "vendor_ramdisk":
-		if recoveryName := partitions.nameForType("recovery"); recoveryName != "" {
+		if recoveryName := partitions.nameForType("recovery"); recoveryName != "" &&
+			ctx.Config().ProductVariables().BoardMoveRecoveryResourcesToVendorBoot != nil &&
+			*ctx.Config().ProductVariables().BoardMoveRecoveryResourcesToVendorBoot &&
+			!proptools.Bool(ctx.Config().ProductVariables().BoardIncludeRecoveryRamdiskInVendorBoot) {
 			fsProps.Include_files_of = []string{recoveryName}
 		}
 		fsProps.Stem = proptools.StringPtr("vendor_ramdisk.img")
@@ -1136,12 +1139,6 @@ func partitionSpecificFsProps(ctx android.EarlyModuleContext, partitions allGene
 			fsProps.Include_files_of,
 			generatedModuleNameForPartition(ctx.Config(), "vendor_ramdisk"),
 		)
-		if recoveryName := partitions.nameForType("recovery"); recoveryName != "" {
-			fsProps.Include_files_of = append(
-				fsProps.Include_files_of,
-				recoveryName,
-			)
-		}
 		fsProps.Include_files_of = append(
 			fsProps.Include_files_of,
 			generatedModuleNameForPartition(ctx.Config(), "debug_ramdisk"),
