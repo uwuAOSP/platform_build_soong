@@ -176,6 +176,18 @@ func (a *androidDevice) copyFilesToProductOutForSoongOnly(ctx android.ModuleCont
 	copyBootImg(a.partitionProps.Vendor_boot_partition_name, "vendor_boot", "vendorbootimage")
 	copyBootImg(a.partitionProps.Vendor_kernel_boot_partition_name, "vendor_kernel_boot", "vendorkernelbootimage")
 	copyBootImg(a.partitionProps.Vendor_boot_debug_partition_name, "vendor_boot-debug", "vendorbootimage_debug")
+	if a.partitionProps.Vendor_boot_debug_partition_name != nil {
+		debugBoot := ctx.GetDirectDepProxyWithTag(*a.partitionProps.Vendor_boot_debug_partition_name, filesystemDepTag)
+		if info, ok := android.OtherModuleProvider(ctx, debugBoot, FilesystemProvider); ok && info.Output != nil {
+			installPath := android.PathForModuleInPartitionInstall(ctx, "", "vendor_ramdisk-debug.img")
+			ctx.Build(pctx, android.BuildParams{
+				Rule:   android.CpRule,
+				Input:  info.Output,
+				Output: installPath,
+			})
+			deps = append(deps, installPath)
+		}
+	}
 
 	// vendor bootconfig
 	// https://cs.android.com/android/platform/superproject/main/+/main:build/make/core/Makefile;l=1672;drc=a951ebf0198006f7fd38073a05c442d0eb92f97b
