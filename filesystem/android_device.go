@@ -1622,6 +1622,12 @@ func (a *androidDevice) addMiscInfo(ctx android.ModuleContext) android.Path {
 			Textf(" && echo blockimgdiff_versions=3,4 >> %s", miscInfo)
 	}
 	fsInfos := a.getFsInfos(ctx)
+	if a.partitionProps.Super_partition_name != nil {
+		superPartition := ctx.GetDirectDepProxyWithTag(*a.partitionProps.Super_partition_name, superPartitionDepTag)
+		if info, ok := android.OtherModuleProvider(ctx, superPartition, SuperImageProvider); ok && info.SuperEmptyImage != nil {
+			builder.Command().Textf("echo build_super_empty_partition=true >> %s", miscInfo)
+		}
+	}
 	if _, ok := fsInfos["vendor"]; ok {
 		builder.Command().Textf("echo board_uses_vendorimage=true >> %s", miscInfo)
 	}
