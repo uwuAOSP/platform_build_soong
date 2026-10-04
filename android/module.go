@@ -764,6 +764,21 @@ func initAndroidModuleBase(m Module) {
 	m.base().module = m
 }
 
+// ModuleActionCacheDisabled prevents restoring cached build actions for modules
+// whose Android.mk callbacks may read mutable fields populated during action
+// generation. Blueprint restores providers and actions, but not arbitrary
+// fields on the module object.
+func (m *ModuleBase) ModuleActionCacheDisabled() bool {
+	if m.module == nil {
+		return false
+	}
+	if _, ok := m.module.(AndroidMkEntriesProvider); ok {
+		return true
+	}
+	_, ok := m.module.(AndroidMkDataProvider)
+	return ok
+}
+
 // InitAndroidModule initializes the Module as an Android module that is not architecture-specific.
 // It adds the common properties, for example "name" and "enabled".
 func InitAndroidModule(m Module) {

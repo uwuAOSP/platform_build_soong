@@ -34,3 +34,11 @@ func TestVintfManifestBuildAction(t *testing.T) {
 		t.Error("Vintf_manifest build command does not process with assemble_vintf : " + vintfFragmentBuild.RuleParams.Command)
 	}
 }
+
+func TestVintfFragmentDisablesActionCache(t *testing.T) {
+	module := &VintfFragmentModule{}
+	module.module = module
+	if !module.ModuleActionCacheDisabled() {
+		t.Fatal("vintf_fragment must regenerate actions before Android.mk export")
+	}
+}
