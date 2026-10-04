@@ -103,7 +103,7 @@ func (m *moduleToInstallationProps) GetFromModuleName(name string) (string, inst
 		return "", installationProperties{}, false
 	}
 	// If the name has a fully qualified module name format, get it from the fully qualified module name
-	if strings.HasPrefix("//", name) {
+	if strings.HasPrefix(name, "//") {
 		prop, ok := m.GetFromFullyQualifiedModuleName(name)
 		return name, prop, ok
 	}
@@ -116,6 +116,44 @@ func (m *moduleToInstallationProps) GetFromModuleName(name string) (string, inst
 				return fullyQualifiedName, discoveredProp, ok
 			}
 		}
+	}
+	return "", installationProperties{}, false
+}
+
+// GetFromModuleNameInNamespace resolves a bare dependency name in the namespace of the module
+// that declares it, then checks the root namespace. A global fallback is accepted only when the
+// name identifies one unique module, since the Soong-resolved dependency edge is not retained.
+func (m *moduleToInstallationProps) GetFromModuleNameInNamespace(name, namespace string) (string, installationProperties, bool) {
+	if len(name) == 0 {
+		return "", installationProperties{}, false
+	}
+	if strings.HasPrefix(name, "//") {
+		prop, ok := m.GetFromFullyQualifiedModuleName(name)
+		return name, prop, ok
+	}
+	if namespace != "" && namespace != "." {
+		fullyQualifiedName := fullyQualifiedModuleName(name, namespace)
+		if prop, ok := m.GetFromFullyQualifiedModuleName(fullyQualifiedName); ok {
+			return fullyQualifiedName, prop, true
+		}
+	}
+	if prop, ok := m.GetFromFullyQualifiedModuleName(name); ok {
+		return name, prop, true
+	}
+	var matchName string
+	var matchProps installationProperties
+	for _, candidate := range m.baseModuleNameToPropsMap[name] {
+		candidateName := fullyQualifiedModuleName(name, candidate.Namespace)
+		if _, ok := m.GetFromFullyQualifiedModuleName(candidateName); !ok {
+			continue
+		}
+		if matchName != "" && matchName != candidateName {
+			return "", installationProperties{}, false
+		}
+		matchName, matchProps = candidateName, candidate
+	}
+	if matchName != "" {
+		return matchName, matchProps, true
 	}
 	return "", installationProperties{}, false
 }
@@ -789,16 +827,22 @@ func removeOverriddenDeps(mctx android.BottomUpMutatorContext) {
 					// android_filesystem.
 					continue
 				}
-				overridden[overrides] = true
+				if overriddenName, _, ok := fsGenState.moduleToInstallationProps.GetFromModuleNameInNamespace(overrides, props.Namespace); ok {
+					overridden[overriddenName] = true
+				}
 			}
 			for _, requiredModule := range props.Required {
-				if requiredModuleName, _, ok := fsGenState.moduleToInstallationProps.GetFromModuleName(requiredModule); ok {
+				if requiredModuleName, _, ok := fsGenState.moduleToInstallationProps.GetFromModuleNameInNamespace(requiredModule, props.Namespace); ok {
 					moduleToRequiredRdepsMap[requiredModuleName] = append(moduleToRequiredRdepsMap[requiredModuleName], depName)
 				}
 			}
 
 			// add required dep to the queue.
-			allDeps = append(allDeps, props.Required...)
+			for _, requiredModule := range props.Required {
+				if requiredModuleName, _, ok := fsGenState.moduleToInstallationProps.GetFromModuleNameInNamespace(requiredModule, props.Namespace); ok {
+					allDeps = append(allDeps, requiredModuleName)
+				}
+			}
 			i += 1
 		}
 
@@ -858,7 +902,7 @@ func removeOverriddenDeps(mctx android.BottomUpMutatorContext) {
 					removeModuleFromFsDeps(requiredModule)
 					requiredModuleProp, _ := fsGenState.moduleToInstallationProps.GetFromFullyQualifiedModuleName(requiredModule)
 					for _, requiredDep := range requiredModuleProp.Required {
-						if fullyQualifiedRequiredDepName, _, ok := fsGenState.moduleToInstallationProps.GetFromModuleName(requiredDep); ok {
+						if fullyQualifiedRequiredDepName, _, ok := fsGenState.moduleToInstallationProps.GetFromModuleNameInNamespace(requiredDep, requiredModuleProp.Namespace); ok {
 							requiredQueue.Add(fullyQualifiedRequiredDepName)
 						}
 					}
@@ -921,10 +965,14 @@ func correctCrossPartitionRequiredDeps(config android.Config) map[string]crossPa
 			for _, topLevelModule := range fsDeps[partition].SortedFullyQualifiedNames() {
 				if props, ok := moduleToInstallationProps.GetFromFullyQualifiedModuleName(topLevelModule); ok {
 					for _, requiredModule := range props.Required {
+						fullyQualifiedRequiredModule, _, ok := moduleToInstallationProps.GetFromModuleNameInNamespace(requiredModule, props.Namespace)
+						if !ok {
+							continue
+						}
 						moduleNamesStack = append(moduleNamesStack, directDepWithParentPartition{
 							parentPartition: partition,
 							parentArchType:  props.ArchType,
-							directDepName:   fullyQualifiedModuleName(requiredModule, props.Namespace),
+							directDepName:   fullyQualifiedRequiredModule,
 						})
 					}
 					// system_ext-specific image variation is not created, thus system_ext
@@ -934,10 +982,14 @@ func correctCrossPartitionRequiredDeps(config android.Config) map[string]crossPa
 					// separately added as deps of the system image.
 					if partition == "system_ext" {
 						for _, sharedLibModule := range props.CcAndRustSharedLibs {
+							fullyQualifiedSharedLib, _, ok := moduleToInstallationProps.GetFromModuleNameInNamespace(sharedLibModule, props.Namespace)
+							if !ok {
+								continue
+							}
 							moduleNamesStack = append(moduleNamesStack, directDepWithParentPartition{
 								parentPartition: partition,
 								parentArchType:  props.ArchType,
-								directDepName:   fullyQualifiedModuleName(sharedLibModule, props.Namespace),
+								directDepName:   fullyQualifiedSharedLib,
 								isSharedLibDep:  true,
 							})
 						}
@@ -969,6 +1021,7 @@ func correctCrossPartitionRequiredDeps(config android.Config) map[string]crossPa
 						if entry, exists := ret[visitingModule.directDepName]; exists {
 							archesOfRequiredSharedLibDep := append(entry.archesOfRequiredSharedLibDep, visitingModule.parentArchType)
 							entry.archesOfRequiredSharedLibDep = archesOfRequiredSharedLibDep
+							ret[visitingModule.directDepName] = entry
 						} else {
 							ret[visitingModule.directDepName] = crossPartitionRequiredDep{
 								partition:                    moduleProps.Partition,
@@ -981,16 +1034,24 @@ func correctCrossPartitionRequiredDeps(config android.Config) map[string]crossPa
 				if _, ok := traversalMap[visitingModule.directDepName]; !ok {
 					traversalMap[visitingModule.directDepName] = true
 					for _, requiredModule := range moduleProps.Required {
+						fullyQualifiedRequiredModule, _, ok := moduleToInstallationProps.GetFromModuleNameInNamespace(requiredModule, moduleProps.Namespace)
+						if !ok {
+							continue
+						}
 						moduleNamesStack = append(moduleNamesStack, directDepWithParentPartition{
 							parentPartition: moduleProps.Partition,
-							directDepName:   requiredModule,
+							directDepName:   fullyQualifiedRequiredModule,
 						})
 					}
 					if moduleProps.Partition == "system_ext" {
 						for _, rustLibModule := range moduleProps.CcAndRustSharedLibs {
+							fullyQualifiedSharedLib, _, ok := moduleToInstallationProps.GetFromModuleNameInNamespace(rustLibModule, moduleProps.Namespace)
+							if !ok {
+								continue
+							}
 							moduleNamesStack = append(moduleNamesStack, directDepWithParentPartition{
 								parentPartition: moduleProps.Partition,
-								directDepName:   rustLibModule,
+								directDepName:   fullyQualifiedSharedLib,
 								isSharedLibDep:  true,
 							})
 						}

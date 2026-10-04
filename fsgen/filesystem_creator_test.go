@@ -110,6 +110,8 @@ func TestFileSystemCreatorSystemImageProps(t *testing.T) {
 		prepareMockRamdiksNodeList,
 		android.FixtureMergeMockFs(android.MockFS{
 			"external/avb/test/data/testkey_rsa4096.pem": nil,
+			"root_product.txt":                           nil,
+			"root_nested_product.txt":                    nil,
 			"external/avb/test/Android.bp": []byte(`
 			filegroup {
 				name: "avb_testkey_rsa4096",
@@ -1376,6 +1378,7 @@ phony {
 	name: "myphony",
 	required: ["system_ext_bin"],
 }
+
 cc_binary {
 	name: "system_ext_bin",
 	shared_libs: ["system_lib"],
@@ -1390,4 +1393,55 @@ cc_binary {
 		true,
 		exists,
 	)
+}
+func TestCrossPartitionRequiredModulesAcrossNamespaces(t *testing.T) {
+	result := android.GroupFixturePreparers(
+		android.PrepareForIntegrationTestWithAndroid,
+		android.PrepareForTestWithAndroidBuildComponents,
+		android.PrepareForTestWithAllowMissingDependencies,
+		prepareForTestWithFsgenBuildComponents,
+		android.PrepareForTestWithNamespace,
+		phony.PrepareForTestWithPhony,
+		etc.PrepareForTestWithPrebuiltEtc,
+		android.FixtureMergeMockFs(android.MockFS{
+			"external/avb/test/data/testkey_rsa4096.pem": nil,
+			"build/soong/fsgen/Android.bp": []byte(`
+			soong_filesystem_creator {
+				name: "foo",
+			}
+			`),
+			"parentns/Android.bp": []byte(`
+			soong_namespace{}
+			phony {
+				name: "parent",
+				required: ["root_product"],
+			}
+			`),
+			"Android.bp": []byte(`
+			prebuilt_etc {
+				name: "root_product",
+				product_specific: true,
+				src: "root_product.txt",
+				required: ["root_nested_product"],
+			}
+			prebuilt_etc {
+				name: "root_nested_product",
+				system_ext_specific: true,
+				src: "root_nested_product.txt",
+			}
+			`),
+		}),
+		android.FixtureModifyConfig(func(config android.Config) {
+			config.TestProductVariables.NamespacesToExport = []string{"parentns"}
+			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.ProductPackagesSet = createProductPackagesSet([]string{"parent"})
+		}),
+	).RunTestWithBp(t, `phony { name: "com.android.vndk.v34", }`)
+
+	state := result.TestContext.Config().Get(fsGenStateOnceKey).(*FsGenState)
+	if _, exists := (*state.fsDeps["product"])["root_product"]; !exists {
+		t.Error("Expected fsgen to include the root-namespace product required module")
+	}
+	if _, exists := (*state.fsDeps["system_ext"])["root_nested_product"]; !exists {
+		t.Error("Expected fsgen to follow the second required hop into system_ext")
+	}
 }
