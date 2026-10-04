@@ -94,7 +94,7 @@ func TestFileSystemCreatorSystemImageProps(t *testing.T) {
 		filesystem.PrepareForTestWithFilesystemBuildComponents,
 		prepareForTestWithFsgenBuildComponents,
 		android.FixtureModifyConfig(func(config android.Config) {
-			config.TestProductVariables.UseFixedTimestampImgFiles = true
+			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.UseFixedTimestampImgFiles = true
 			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.BoardAvbEnable = true
 			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.PartitionQualifiedVariables =
 				map[string]android.PartitionQualifiedVariablesType{
@@ -449,7 +449,6 @@ func TestPrebuiltEtcModuleGen(t *testing.T) {
 				"frameworks/base/config/preloaded-classes:system/etc/preloaded-classes",
 				"frameworks/base/data/keyboards/Vendor_0079_Product_0011.kl:system/usr/keylayout/subdir/Vendor_0079_Product_0011.kl",
 				"frameworks/base/data/keyboards/Vendor_0079_Product_18d4.kl:system/usr/keylayout/subdir/Vendor_0079_Product_18d4.kl",
-				"some/non/existing/file.txt:system/etc/file.txt",
 				"device/sample/etc/apns-full-conf.xml:product/etc/apns-conf.xml:google",
 				"device/sample/etc/apns-full-conf.xml:product/etc/apns-conf-2.xml",
 				"device/sample/etc/init/odm.rc:odm/etc/init/odm.rc",
@@ -505,7 +504,7 @@ func TestPrebuiltEtcModuleGen(t *testing.T) {
 			!generatedModule.InstallInSystemExt(),
 	)
 
-	odmCopyModule := result.ModuleForTests(t, "odm-device_sample_etc-etc_init-0", "android_arm64_armv8-a").Module()
+	odmCopyModule := result.ModuleForTests(t, "odm-device_sample_etc_init-odm_etc_init-0", "android_vendor_arm64_armv8-a").Module()
 	android.AssertBoolEquals(
 		t,
 		"PRODUCT_COPY_FILES destination under odm/ must be installed to the odm partition",
@@ -843,6 +842,29 @@ func TestPrebuiltEtcModuleGen(t *testing.T) {
 	)
 }
 
+func TestProductCopyFilesMissingFirstSourceIsAnError(t *testing.T) {
+	android.GroupFixturePreparers(
+		android.PrepareForIntegrationTestWithAndroid,
+		android.PrepareForTestWithAndroidBuildComponents,
+		android.PrepareForTestWithAllowMissingDependencies,
+		filesystem.PrepareForTestWithFilesystemBuildComponents,
+		prepareForTestWithFsgenBuildComponents,
+		android.FixtureModifyConfig(func(config android.Config) {
+			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.ProductCopyFiles = []string{
+				"missing/file.txt:system/etc/file.txt",
+				"existing/file.txt:system/etc/file.txt",
+			}
+		}),
+		android.FixtureMergeMockFs(android.MockFS{
+			"build/soong/fsgen/Android.bp": []byte(`soong_filesystem_creator { name: "foo", }`),
+			"existing/file.txt":            nil,
+		}),
+	).ExtendWithErrorHandler(android.FixtureExpectsAllErrorsToMatchAPattern([]string{
+		`PRODUCT_COPY_FILES source "missing/file.txt" for destination "system/etc/file.txt" does not exist`,
+		`PRODUCT_COPY_FILES source "missing/file.txt" for destination "system/etc/file.txt" does not exist`,
+	})).RunTest(t)
+}
+
 func TestPartitionOfOverrideModules(t *testing.T) {
 	result := android.GroupFixturePreparers(
 		android.PrepareForIntegrationTestWithAndroid,
@@ -904,6 +926,7 @@ func TestCrossPartitionRequiredModules(t *testing.T) {
 		android.PrepareForTestWithNamespace,
 		phony.PrepareForTestWithPhony,
 		etc.PrepareForTestWithPrebuiltEtc,
+		android.FixtureModifyConfig(android.SetKatiEnabledForTests),
 		android.PrepareForTestWithHostTools("conv_linker_config"),
 		android.FixtureMergeMockFs(android.MockFS{
 			"external/avb/test/data/testkey_rsa4096.pem": nil,
@@ -981,6 +1004,7 @@ func TestOverriddenDepsAreAddedToFilesystemModuleOverriddenDeps(t *testing.T) {
 		java.PrepareForTestWithJavaBuildComponents,
 		prepareMockRamdiksNodeList,
 		prepareForTestWithDefaultSystemDeps,
+		android.FixtureModifyConfig(android.SetKatiEnabledForTests),
 		android.PrepareForTestWithHostTools("conv_linker_config"),
 		android.FixtureMergeMockFs(android.MockFS{
 			"external/avb/test/data/testkey_rsa4096.pem": nil,
@@ -1417,25 +1441,25 @@ func TestCrossPartitionRequiredModulesAcrossNamespaces(t *testing.T) {
 				required: ["root_product"],
 			}
 			`),
-			"Android.bp": []byte(`
-			prebuilt_etc {
-				name: "root_product",
-				product_specific: true,
-				src: "root_product.txt",
-				required: ["root_nested_product"],
-			}
-			prebuilt_etc {
-				name: "root_nested_product",
-				system_ext_specific: true,
-				src: "root_nested_product.txt",
-			}
-			`),
 		}),
 		android.FixtureModifyConfig(func(config android.Config) {
 			config.TestProductVariables.NamespacesToExport = []string{"parentns"}
 			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.ProductPackagesSet = createProductPackagesSet([]string{"parent"})
 		}),
-	).RunTestWithBp(t, `phony { name: "com.android.vndk.v34", }`)
+	).RunTestWithBp(t, `
+phony { name: "com.android.vndk.v34", }
+prebuilt_etc {
+	name: "root_product",
+	product_specific: true,
+	src: "root_product.txt",
+	required: ["root_nested_product"],
+}
+prebuilt_etc {
+	name: "root_nested_product",
+	system_ext_specific: true,
+	src: "root_nested_product.txt",
+}
+`)
 
 	state := result.TestContext.Config().Get(fsGenStateOnceKey).(*FsGenState)
 	if _, exists := (*state.fsDeps["product"])["root_product"]; !exists {

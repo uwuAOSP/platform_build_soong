@@ -16,6 +16,7 @@ package filesystem
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"android/soong/android"
@@ -140,7 +141,13 @@ func TestFileSystemDeps(t *testing.T) {
 
 func TestFilesystemUsesExplicitFsConfigInputs(t *testing.T) {
 	t.Parallel()
-	result := fixture.RunTestWithBp(t, `
+	result := android.GroupFixturePreparers(
+		fixture,
+		android.FixtureMergeMockFs(android.MockFS{
+			"vendor_fs_config_files": nil,
+			"vendor_fs_config_dirs":  nil,
+		}),
+	).RunTestWithBp(t, `
 		android_filesystem {
 			name: "myvendor",
 			partition_type: "vendor",
@@ -165,9 +172,9 @@ func TestFilesystemUsesExplicitFsConfigInputs(t *testing.T) {
 	rootRule := fsModule.Description("Assemble explicit fs_config lookup inputs")
 	android.AssertStringDoesContain(t, "vendor file config is not staged in the separate lookup tree", rootRule.RuleParams.Command, "fs_config_root/vendor/etc/fs_config_files")
 	android.AssertStringDoesContain(t, "vendor directory config is not staged in the separate lookup tree", rootRule.RuleParams.Command, "fs_config_root/vendor/etc/fs_config_dirs")
-	fsConfigCmd := fsModule.Rule("fs_config_rule").RuleParams.Command
-	android.AssertStringDoesContain(t, "filesystem_config does not use the explicit config lookup tree", fsConfigCmd, "-D ")
-	android.AssertStringDoesContain(t, "filesystem_config does not reference fs_config_root", fsConfigCmd, "fs_config_root")
+	fsConfigBuildParams := fsModule.Rule("fs_config_rule").BuildParams
+	android.AssertStringDoesContain(t, "filesystem_config does not use the explicit config lookup tree", fsConfigBuildParams.Args["targetOut"], "fs_config_root")
+	android.AssertStringDoesContain(t, "filesystem_config does not depend on assembled fs_config inputs", strings.Join(fsConfigBuildParams.Implicits.Strings(), " "), "fs_config_root.timestamp")
 }
 
 func TestFileSystemFillsLinkerConfigWithStubLibs(t *testing.T) {
@@ -1067,7 +1074,7 @@ func TestRamdiskFragmentInTargetFiles(t *testing.T) {
 	result := android.GroupFixturePreparers(
 		fixture,
 		android.FixtureModifyConfig(func(config android.Config) {
-			config.TestProductVariables.BoardKernelBase = "0x00000000"
+			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.BoardKernelBase = "0x00000000"
 		}),
 	).RunTestWithBp(t, `
 android_filesystem {
