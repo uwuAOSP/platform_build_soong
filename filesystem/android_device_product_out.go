@@ -368,8 +368,8 @@ func (a *androidDevice) getFsInfos(ctx android.ModuleContext) map[string]Filesys
 		propToType{a.partitionProps.Vendor_dlkm_partition_name, "vendor_dlkm"},
 		propToType{a.partitionProps.Odm_dlkm_partition_name, "odm_dlkm"},
 		propToType{a.partitionProps.Userdata_partition_name, "userdata"},
-		// filesystemInfo from init_boot and vendor_boot actually are re-exports of the ramdisk
-		// images inside of them
+		// A ramdisk can be shipped both as ramdisk.img and inside init_boot.img.
+		propToType{a.partitionProps.Ramdisk_partition_name, "ramdisk"},
 		propToType{a.partitionProps.Init_boot_partition_name, "ramdisk"},
 		propToType{a.partitionProps.Vendor_boot_partition_name, "vendor_ramdisk"},
 		propToType{a.partitionProps.Vendor_kernel_ramdisk_partition_name, "vendor_kernel_ramdisk"},

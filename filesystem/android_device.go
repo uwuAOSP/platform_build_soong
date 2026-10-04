@@ -430,10 +430,6 @@ func (a *androidDevice) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 			ctx.ModuleErrorf("There cannot be more than 1 main android_device module")
 		}
 	}
-	if a.partitionProps.Init_boot_partition_name != nil && a.partitionProps.Ramdisk_partition_name != nil {
-		ctx.ModuleErrorf("Init_boot and Ramdisk cannot both be non-empty.")
-	}
-
 	// Normal allInstalledModules which only include modules in those partitions which will be create images for this product.
 	allInstalledModules := a.allInstalledModules(ctx, false)
 
