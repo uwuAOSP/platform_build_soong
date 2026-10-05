@@ -962,6 +962,14 @@ func (r FilesystemInfo) Encode(ctx gobtools.EncContext, buf *bytes.Buffer) error
 		return err
 	}
 
+	if err = r.FsConfigRootDir.Encode(ctx, buf); err != nil {
+		return err
+	}
+
+	if err = gobtools.EncodeInterface(ctx, buf, r.FsConfigRootTimestamp); err != nil {
+		return err
+	}
+
 	if err = r.Owners.Encode(ctx, buf); err != nil {
 		return err
 	}
@@ -1024,7 +1032,7 @@ func (r FilesystemInfo) Encode(ctx gobtools.EncContext, buf *bytes.Buffer) error
 
 func (r FilesystemInfo) CustomHash(hasher *proptools.Hasher) error {
 	hasher.WriteString(":filesystem.FilesystemInfo")
-	hasher.WriteInt(28)
+	hasher.WriteInt(30)
 	hasher.WriteString(":filesystem.android.Path")
 	val1 := r.Output == nil
 	if val1 {
@@ -1292,13 +1300,41 @@ func (r FilesystemInfo) CustomHash(hasher *proptools.Hasher) error {
 			r.FilesystemConfig.(proptools.CustomHash).CustomHash(hasher)
 		}
 	}
-	val37 := func(hasher *proptools.Hasher, val36 InstalledModuleInfo) error {
-		if err := val36.CustomHash(hasher); err != nil {
+	if err := r.FsConfigRootDir.CustomHash(hasher); err != nil {
+		return err
+	}
+	hasher.WriteString(":filesystem.android.Path")
+	val36 := r.FsConfigRootTimestamp == nil
+	if val36 {
+		hasher.WriteByte(0)
+	} else {
+		if v := reflect.ValueOf(r.FsConfigRootTimestamp); v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				panic(fmt.Errorf("nil pointer is not supported in interface"))
+			} else {
+				val37 := r.FsConfigRootTimestamp == nil
+				if val37 {
+					hasher.WriteByte(0)
+				} else {
+					val38 := func(hasher *proptools.Hasher) error {
+						return r.FsConfigRootTimestamp.(proptools.CustomHash).CustomHash(hasher)
+					}
+					if err := proptools.HashReference(hasher, uintptr(v.Pointer()), val38); err != nil {
+						return err
+					}
+				}
+			}
+		} else {
+			r.FsConfigRootTimestamp.(proptools.CustomHash).CustomHash(hasher)
+		}
+	}
+	val40 := func(hasher *proptools.Hasher, val39 InstalledModuleInfo) error {
+		if err := val39.CustomHash(hasher); err != nil {
 			return err
 		}
 		return nil
 	}
-	if err := r.Owners.Hash(hasher, "InstalledModuleInfo", val37); err != nil {
+	if err := r.Owners.Hash(hasher, "InstalledModuleInfo", val40); err != nil {
 		return err
 	}
 	hasher.WriteString(":.bool")
@@ -1308,22 +1344,22 @@ func (r FilesystemInfo) CustomHash(hasher *proptools.Hasher) error {
 		hasher.WriteByte(0)
 	}
 	hasher.WriteString(":filesystem.android.Path")
-	val38 := r.PropFileForMiscInfo == nil
-	if val38 {
+	val41 := r.PropFileForMiscInfo == nil
+	if val41 {
 		hasher.WriteByte(0)
 	} else {
 		if v := reflect.ValueOf(r.PropFileForMiscInfo); v.Kind() == reflect.Ptr {
 			if v.IsNil() {
 				panic(fmt.Errorf("nil pointer is not supported in interface"))
 			} else {
-				val39 := r.PropFileForMiscInfo == nil
-				if val39 {
+				val42 := r.PropFileForMiscInfo == nil
+				if val42 {
 					hasher.WriteByte(0)
 				} else {
-					val40 := func(hasher *proptools.Hasher) error {
+					val43 := func(hasher *proptools.Hasher) error {
 						return r.PropFileForMiscInfo.(proptools.CustomHash).CustomHash(hasher)
 					}
-					if err := proptools.HashReference(hasher, uintptr(v.Pointer()), val40); err != nil {
+					if err := proptools.HashReference(hasher, uintptr(v.Pointer()), val43); err != nil {
 						return err
 					}
 				}
@@ -1333,16 +1369,16 @@ func (r FilesystemInfo) CustomHash(hasher *proptools.Hasher) error {
 		}
 	}
 	hasher.WriteString(":.*int64")
-	val41 := r.PartitionSize == nil
-	if val41 {
+	val44 := r.PartitionSize == nil
+	if val44 {
 		hasher.WriteByte(0)
 	} else {
-		val42 := func(hasher *proptools.Hasher) error {
+		val45 := func(hasher *proptools.Hasher) error {
 			hasher.WriteString(":.int64")
 			hasher.WriteUint64(uint64((*r.PartitionSize)))
 			return nil
 		}
-		if err := proptools.HashReference(hasher, uintptr(unsafe.Pointer(r.PartitionSize)), val42); err != nil {
+		if err := proptools.HashReference(hasher, uintptr(unsafe.Pointer(r.PartitionSize)), val45); err != nil {
 			return err
 		}
 	}
@@ -1357,20 +1393,20 @@ func (r FilesystemInfo) CustomHash(hasher *proptools.Hasher) error {
 	hasher.WriteString(":.string")
 	hasher.WriteString(r.AvbHashAlgorithm)
 	hasher.WriteString(":filesystem.android.Path")
-	val43 := r.AvbKey == nil
-	if val43 {
+	val46 := r.AvbKey == nil
+	if val46 {
 		hasher.WriteByte(0)
 	} else {
 		if v := reflect.ValueOf(r.AvbKey); v.Kind() == reflect.Ptr {
 			if v.IsNil() {
 				panic(fmt.Errorf("nil pointer is not supported in interface"))
 			} else {
-				val44 := r.AvbKey == nil
-				if val44 {
+				val47 := r.AvbKey == nil
+				if val47 {
 					hasher.WriteByte(0)
 				} else {
-					val45 := func(hasher *proptools.Hasher) error { return r.AvbKey.(proptools.CustomHash).CustomHash(hasher) }
-					if err := proptools.HashReference(hasher, uintptr(v.Pointer()), val45); err != nil {
+					val48 := func(hasher *proptools.Hasher) error { return r.AvbKey.(proptools.CustomHash).CustomHash(hasher) }
+					if err := proptools.HashReference(hasher, uintptr(v.Pointer()), val48); err != nil {
 						return err
 					}
 				}
@@ -1394,20 +1430,20 @@ func (r FilesystemInfo) CustomHash(hasher *proptools.Hasher) error {
 		hasher.WriteByte(0)
 	}
 	hasher.WriteString(":filesystem.android.Path")
-	val46 := r.checkVintfLog == nil
-	if val46 {
+	val49 := r.checkVintfLog == nil
+	if val49 {
 		hasher.WriteByte(0)
 	} else {
 		if v := reflect.ValueOf(r.checkVintfLog); v.Kind() == reflect.Ptr {
 			if v.IsNil() {
 				panic(fmt.Errorf("nil pointer is not supported in interface"))
 			} else {
-				val47 := r.checkVintfLog == nil
-				if val47 {
+				val50 := r.checkVintfLog == nil
+				if val50 {
 					hasher.WriteByte(0)
 				} else {
-					val48 := func(hasher *proptools.Hasher) error { return r.checkVintfLog.(proptools.CustomHash).CustomHash(hasher) }
-					if err := proptools.HashReference(hasher, uintptr(v.Pointer()), val48); err != nil {
+					val51 := func(hasher *proptools.Hasher) error { return r.checkVintfLog.(proptools.CustomHash).CustomHash(hasher) }
+					if err := proptools.HashReference(hasher, uintptr(v.Pointer()), val51); err != nil {
 						return err
 					}
 				}
@@ -1572,6 +1608,18 @@ func (r *FilesystemInfo) Decode(ctx gobtools.EncContext, buf *bytes.Reader) erro
 		r.FilesystemConfig = val40.(android.Path)
 	}
 
+	if err = r.FsConfigRootDir.Decode(ctx, buf); err != nil {
+		return err
+	}
+
+	if val43, err := gobtools.DecodeInterface(ctx, buf); err != nil {
+		return err
+	} else if val43 == nil {
+		r.FsConfigRootTimestamp = nil
+	} else {
+		r.FsConfigRootTimestamp = val43.(android.Path)
+	}
+
 	if err = r.Owners.Decode(ctx, buf); err != nil {
 		return err
 	}
@@ -1581,25 +1629,25 @@ func (r *FilesystemInfo) Decode(ctx gobtools.EncContext, buf *bytes.Reader) erro
 		return err
 	}
 
-	if val44, err := gobtools.DecodeInterface(ctx, buf); err != nil {
+	if val47, err := gobtools.DecodeInterface(ctx, buf); err != nil {
 		return err
-	} else if val44 == nil {
+	} else if val47 == nil {
 		r.PropFileForMiscInfo = nil
 	} else {
-		r.PropFileForMiscInfo = val44.(android.Path)
+		r.PropFileForMiscInfo = val47.(android.Path)
 	}
 
-	var val46 bool
-	if err = gobtools.DecodeBool(buf, &val46); err != nil {
+	var val49 bool
+	if err = gobtools.DecodeBool(buf, &val49); err != nil {
 		return err
 	}
-	if !val46 {
-		var val45 int64
-		err = gobtools.DecodeInt64(buf, &val45)
+	if !val49 {
+		var val48 int64
+		err = gobtools.DecodeInt64(buf, &val48)
 		if err != nil {
 			return err
 		}
-		r.PartitionSize = &val45
+		r.PartitionSize = &val48
 	}
 
 	err = gobtools.DecodeBool(buf, &r.UseAvb)
@@ -1617,12 +1665,12 @@ func (r *FilesystemInfo) Decode(ctx gobtools.EncContext, buf *bytes.Reader) erro
 		return err
 	}
 
-	if val52, err := gobtools.DecodeInterface(ctx, buf); err != nil {
+	if val55, err := gobtools.DecodeInterface(ctx, buf); err != nil {
 		return err
-	} else if val52 == nil {
+	} else if val55 == nil {
 		r.AvbKey = nil
 	} else {
-		r.AvbKey = val52.(android.Path)
+		r.AvbKey = val55.(android.Path)
 	}
 
 	err = gobtools.DecodeString(buf, &r.PartitionName)
@@ -1640,12 +1688,12 @@ func (r *FilesystemInfo) Decode(ctx gobtools.EncContext, buf *bytes.Reader) erro
 		return err
 	}
 
-	if val57, err := gobtools.DecodeInterface(ctx, buf); err != nil {
+	if val60, err := gobtools.DecodeInterface(ctx, buf); err != nil {
 		return err
-	} else if val57 == nil {
+	} else if val60 == nil {
 		r.checkVintfLog = nil
 	} else {
-		r.checkVintfLog = val57.(android.Path)
+		r.checkVintfLog = val60.(android.Path)
 	}
 
 	err = gobtools.DecodeBool(buf, &r.Prebuilt)
