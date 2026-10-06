@@ -181,7 +181,10 @@ func createRecoveryBootImage(ctx android.LoadHookContext, dtbImg dtbImg) bool {
 	if !partitionVariables.BoardExcludeKernelFromRecoveryImage {
 		kernel = kernelImageInput(ctx)
 		if kernel == "" {
-			ctx.ModuleErrorf("recovery image requires a kernel unless BOARD_EXCLUDE_KERNEL_FROM_RECOVERY_IMAGE is true")
+			// Legacy Make kernel builds do not necessarily expose their kernel
+			// output as a Soong input. In that case, leave recovery image
+			// generation to the existing ramdisk/Make path instead of failing
+			// Soong analysis.
 			return false
 		}
 	}
