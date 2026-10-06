@@ -191,6 +191,19 @@ func (f *filesystemCreator) createVbmetaPartitions(ctx android.LoadHookContext, 
 	// `BOARD_AVB_<partition name>_KEY_PATH` value.
 	// https://cs.android.com/android/platform/superproject/main/+/main:build/make/core/Makefile;l=4823;drc=62e20f0d218f60bae563b4ee742d88cca1fc1901
 	includeAsChainedPartitionInVbmeta := func(partition string) bool {
+		// Make only chains the recovery partition when INSTALLED_RECOVERYIMAGE_TARGET
+		// is set (ifdef INSTALLED_RECOVERYIMAGE_TARGET), and even then skips it for
+		// non-A/B devices because recovery is verified separately there.
+		// https://cs.android.com/android/platform/superproject/main/+/main:build/make/core/Makefile;l=5064
+		// Without this, devices that set BOARD_AVB_RECOVERY_KEY_PATH but have no
+		// standalone recovery image (recovery-as-boot, or recovery resources moved
+		// to vendor_boot) would chain a nonexistent recovery partition, colliding
+		// with another chained partition sharing the same rollback index location.
+		if partition == "recovery" &&
+			(ctx.DeviceConfig().BoardUsesRecoveryAsBoot() ||
+				ctx.DeviceConfig().BoardMoveRecoveryResourcesToVendorBoot()) {
+			return false
+		}
 		val, ok := partitionVars.PartitionQualifiedVariables[partition]
 		return ok && len(val.BoardAvbKeyPath) > 0
 	}
