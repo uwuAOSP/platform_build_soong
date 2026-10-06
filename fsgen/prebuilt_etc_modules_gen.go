@@ -551,6 +551,26 @@ func soongKernelModule(ctx android.LoadHookContext) string {
 	return module
 }
 
+// activeSoongKernelModule returns the configured module only when the product
+// selects the Soong kernel build path. Hybrid products may export
+// SOONG_KERNEL_MODULE while still building the kernel through legacy Make.
+func activeSoongKernelModule(ctx android.LoadHookContext) string {
+	if !ctx.Config().ProductVariables().BoardUsesSoongKernel {
+		return ""
+	}
+	return soongKernelModule(ctx)
+}
+
+// kernelImageInput returns the kernel artifact selected by the product's
+// kernel build mode, falling back to a prebuilt kernel when no active module
+// is configured.
+func kernelImageInput(ctx android.LoadHookContext) string {
+	if module := activeSoongKernelModule(ctx); module != "" {
+		return module
+	}
+	return getPrebuiltKernelPath(ctx)
+}
+
 func getstageDeviceFileProps(ctx android.LoadHookContext) []filesystem.StageDeviceFilePairProp {
 	stageDeviceFileProps := []filesystem.StageDeviceFilePairProp{}
 	processedProductCopyFilesMap := uniqueExistingProductCopyFileMap(ctx)

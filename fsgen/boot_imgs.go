@@ -147,10 +147,7 @@ func createBootImageCommon(ctx android.LoadHookContext, kernelPath string, prebu
 
 func createBootImage(ctx android.LoadHookContext, dtbImg dtbImg) bool {
 	partitionVariables := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse
-	kernelPath := getPrebuiltKernelPath(ctx)
-	if kernelPath == "" {
-		kernelPath = soongKernelModule(ctx)
-	}
+	kernelPath := kernelImageInput(ctx)
 	return createBootImageCommon(ctx, kernelPath, partitionVariables.BoardPrebuiltBootImage, dtbImg, proptools.StringPtr("boot.img"))
 }
 
@@ -182,10 +179,7 @@ func createRecoveryBootImage(ctx android.LoadHookContext, dtbImg dtbImg) bool {
 
 	var kernel string
 	if !partitionVariables.BoardExcludeKernelFromRecoveryImage {
-		kernel = soongKernelModule(ctx)
-		if kernel == "" {
-			kernel = getPrebuiltKernelPath(ctx)
-		}
+		kernel = kernelImageInput(ctx)
 		if kernel == "" {
 			ctx.ModuleErrorf("recovery image requires a kernel unless BOARD_EXCLUDE_KERNEL_FROM_RECOVERY_IMAGE is true")
 			return false
@@ -511,7 +505,7 @@ func createInitBootImage(ctx android.LoadHookContext) bool {
 
 // Returns true if the product contains a boot image (built from source or prebuilt)
 func buildingBootImage(ctx android.LoadHookContext, partitionVars android.PartitionVariables) bool {
-	if partitionVars.BoardUsesRecoveryAsBoot && soongKernelModule(ctx) == "" {
+	if partitionVars.BoardUsesRecoveryAsBoot && kernelImageInput(ctx) == "" {
 		return false
 	}
 
@@ -630,7 +624,7 @@ func createDtbImgFilegroup(ctx android.LoadHookContext) dtbImg {
 		// and allow dtb in vendor_boot to be empty.
 		imgType = "vendor_kernel_boot"
 	}
-	if kernel := soongKernelModule(ctx); kernel != "" {
+	if kernel := activeSoongKernelModule(ctx); kernel != "" {
 		return dtbImg{include: true, name: kernel, imgType: imgType}
 	}
 	if partitionVars.BoardPrebuiltDtbDir != "" {
@@ -720,7 +714,7 @@ func createPrebuiltDtboImages(ctx android.LoadHookContext) (string, string) {
 		size, _ := strconv.ParseInt(partitionVars.BoardDtboPartitionSize, 0, 64)
 		avbInfo := getAvbInfo(ctx.Config(), "dtbo")
 		src := partitionVars.BoardPrebuiltDtboImage
-		if kernel := soongKernelModule(ctx); src == "" && kernel != "" {
+		if kernel := activeSoongKernelModule(ctx); src == "" && kernel != "" {
 			src = kernel + "{.dtbo}"
 		}
 		ctx.CreateModuleInDirectory(
@@ -774,7 +768,7 @@ func createPrebuiltDtboImages(ctx android.LoadHookContext) (string, string) {
 
 func getDtboModuleName(ctx android.LoadHookContext) string {
 	partitionVars := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse
-	if soongKernelModule(ctx) != "" && partitionVars.BoardDtboPartitionSize != "" {
+	if activeSoongKernelModule(ctx) != "" && partitionVars.BoardDtboPartitionSize != "" {
 		return generatedModuleNameForPartition(ctx.Config(), "dtbo")
 	}
 	if partitionVars.BoardPrebuiltDtboImage != "" {
