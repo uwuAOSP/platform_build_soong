@@ -480,13 +480,7 @@ func (f *filesystemCreator) createSoongOnlyImageAliases(ctx android.LoadHookCont
 
 	addAlias("bootimage", f.properties.Boot_image)
 	addAlias("initbootimage", f.properties.Init_boot_image)
-	recoveryImage := f.properties.Recovery_image
-	if recoveryImage == "" {
-		if recoveryModule := partitions.nameForType("recovery"); recoveryModule != "" {
-			recoveryImage = ":" + recoveryModule
-		}
-	}
-	addAlias("recoveryimage", recoveryImage)
+	addAlias("recoveryimage", f.properties.Recovery_image)
 	addAlias("vendorbootimage", f.properties.Vendor_boot_image)
 	addAlias("vendorkernelbootimage", f.properties.Vendor_kernel_boot_image)
 	addAlias("vendorbootimage_debug", f.properties.Vendor_boot_debug_image)
@@ -707,11 +701,11 @@ func (f *filesystemCreator) createDeviceModule(
 	if modName := partitions.nameForType("userdata"); modName != "" {
 		partitionProps.Userdata_partition_name = proptools.StringPtr(modName)
 	}
+	// android_device's recovery_partition_name expects a boot image provider;
+	// the recovery partition filesystem by itself is only the ramdisk.
 	if modName := partitions.nameForType("recovery"); modName != "" && !ctx.DeviceConfig().BoardMoveRecoveryResourcesToVendorBoot() {
 		if f.properties.Recovery_image != "" {
 			partitionProps.Recovery_partition_name = proptools.StringPtr(generatedModuleNameForPartition(ctx.Config(), "recovery-bootimg"))
-		} else {
-			partitionProps.Recovery_partition_name = proptools.StringPtr(modName)
 		}
 	}
 	if modName := partitions.nameForType("system_dlkm"); modName != "" && !android.InList("system_dlkm", superImageSubPartitions) {
