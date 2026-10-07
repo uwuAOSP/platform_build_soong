@@ -1151,6 +1151,62 @@ cc_library_shared {
 	)
 }
 
+func TestOdmCrossPartitionSharedLibDeps(t *testing.T) {
+	result := android.GroupFixturePreparers(
+		android.PrepareForIntegrationTestWithAndroid,
+		android.PrepareForTestWithAndroidBuildComponents,
+		android.PrepareForTestWithAllowMissingDependencies,
+		prepareForTestWithFsgenBuildComponents,
+		cc.PrepareForTestWithCcBuildComponents,
+		java.PrepareForTestWithJavaBuildComponents,
+		prepareMockRamdiksNodeList,
+		android.PrepareForTestWithNamespace,
+		android.FixtureMergeMockFs(android.MockFS{
+			"external/avb/test/data/testkey_rsa4096.pem": nil,
+			"build/soong/fsgen/Android.bp": []byte(`
+			soong_filesystem_creator {
+				name: "foo",
+			}
+		`),
+		}),
+		android.FixtureModifyConfig(func(config android.Config) {
+			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.ProductPackagesSet = createProductPackagesSet([]string{"odm_binary"})
+		}),
+	).RunTestWithBp(t, `
+cc_binary {
+	name: "odm_binary",
+	device_specific: true,
+	shared_libs: ["vendor_direct_lib", "odm_library"],
+}
+cc_library_shared {
+	name: "odm_library",
+	device_specific: true,
+	shared_libs: ["vendor_transitive_lib"],
+}
+cc_library_shared {
+	name: "vendor_direct_lib",
+	system_ext_specific: true,
+	vendor_available: true,
+	shared_libs: ["vendor_nested_lib"],
+}
+cc_library_shared {
+	name: "vendor_transitive_lib",
+	vendor: true,
+}
+cc_library_shared {
+	name: "vendor_nested_lib",
+	vendor: true,
+}
+`)
+
+	resolvedDeps := result.TestContext.Config().Get(fsGenStateOnceKey).(*FsGenState).fsDeps["vendor"]
+	for _, sharedLib := range []string{"vendor_direct_lib", "vendor_transitive_lib", "vendor_nested_lib"} {
+		if _, exists := (*resolvedDeps)[sharedLib]; !exists {
+			t.Errorf("Expected ODM shared library dependency %s in vendor filesystem deps", sharedLib)
+		}
+	}
+}
+
 func TestRemoveOverriddenTransitiveDeps(t *testing.T) {
 	t.Run("case 1", func(t *testing.T) {
 		result := android.GroupFixturePreparers(
