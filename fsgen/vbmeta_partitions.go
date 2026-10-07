@@ -190,18 +190,15 @@ func (f *filesystemCreator) createVbmetaPartitions(ctx android.LoadHookContext, 
 	// --chain_partition argument is only set for partitions that set
 	// `BOARD_AVB_<partition name>_KEY_PATH` value.
 	// https://cs.android.com/android/platform/superproject/main/+/main:build/make/core/Makefile;l=4823;drc=62e20f0d218f60bae563b4ee742d88cca1fc1901
+	// A recovery ramdisk is not a standalone recovery partition image. Only
+	// include recovery in vbmeta when its boot image was generated.
+	hasStandaloneRecoveryImage := f.properties.Recovery_image != "" &&
+		!ctx.DeviceConfig().BoardUsesRecoveryAsBoot() &&
+		!ctx.DeviceConfig().BoardMoveRecoveryResourcesToVendorBoot()
 	includeAsChainedPartitionInVbmeta := func(partition string) bool {
-		// Make only chains the recovery partition when INSTALLED_RECOVERYIMAGE_TARGET
-		// is set (ifdef INSTALLED_RECOVERYIMAGE_TARGET), and even then skips it for
-		// non-A/B devices because recovery is verified separately there.
-		// https://cs.android.com/android/platform/superproject/main/+/main:build/make/core/Makefile;l=5064
-		// Without this, devices that set BOARD_AVB_RECOVERY_KEY_PATH but have no
-		// standalone recovery image (recovery-as-boot, or recovery resources moved
-		// to vendor_boot) would chain a nonexistent recovery partition, colliding
-		// with another chained partition sharing the same rollback index location.
-		if partition == "recovery" &&
-			(ctx.DeviceConfig().BoardUsesRecoveryAsBoot() ||
-				ctx.DeviceConfig().BoardMoveRecoveryResourcesToVendorBoot()) {
+		// Make only chains recovery when INSTALLED_RECOVERYIMAGE_TARGET is set.
+		// The standalone image check also excludes recovery-as-boot configurations.
+		if partition == "recovery" && !hasStandaloneRecoveryImage {
 			return false
 		}
 		val, ok := partitionVars.PartitionQualifiedVariables[partition]
@@ -238,8 +235,7 @@ func (f *filesystemCreator) createVbmetaPartitions(ctx android.LoadHookContext, 
 		case "dtbo":
 			return getDtboModuleName(ctx) != ""
 		case "recovery":
-			// ifdef INSTALLED_RECOVERYIMAGE_TARGET
-			return !ctx.DeviceConfig().BoardUsesRecoveryAsBoot() && !ctx.DeviceConfig().BoardMoveRecoveryResourcesToVendorBoot()
+			return hasStandaloneRecoveryImage
 		// Technically these partitions are determined based on len(BOARD_AVB_VBMETA_SYSTEM) and
 		// len(BOARD_AVB_VBMETA_VENDOR) but if these are non empty these partitions are
 		// already included in the chained partitions.

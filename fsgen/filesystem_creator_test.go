@@ -1300,6 +1300,49 @@ func TestVbmetaGenerationWithCustomPartitions(t *testing.T) {
 	android.AssertStringDoesContain(t, "avb enabled custom partition must be included as chained partition", vbmetaImageCommand, "--chain_partition custom1:5:out/soong/.intermediates/custom1/android_common/custom1.avbpubkey")
 }
 
+func TestVbmetaOmitsRecoveryWithoutStandaloneImage(t *testing.T) {
+	result := android.GroupFixturePreparers(
+		android.PrepareForIntegrationTestWithAndroid,
+		android.PrepareForTestWithAndroidBuildComponents,
+		android.PrepareForTestWithAllowMissingDependencies,
+		prepareForTestWithFsgenBuildComponents,
+		cc.PrepareForTestWithCcBuildComponents,
+		java.PrepareForTestWithJavaBuildComponents,
+		prepareMockRamdiksNodeList,
+		filesystem.PrepareForTestWithFilesystemBuildComponents,
+		android.FixtureMergeMockFs(android.MockFS{
+			"external/avb/test/data/testkey_rsa4096.pem": nil,
+			"build/soong/fsgen/Android.bp": []byte(`
+			soong_filesystem_creator {
+				name: "foo",
+			}
+		`),
+		}),
+		android.FixtureModifyConfig(func(config android.Config) {
+			config.TestProductVariables.BuildingRecoveryImage = proptools.BoolPtr(true)
+			partitionVars := &config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse
+			partitionVars.BuildingVbmetaImage = true
+			partitionVars.BoardAvbEnable = true
+			partitionVars.BoardBootHeaderVersion = "3"
+			partitionVars.PartitionQualifiedVariables = map[string]android.PartitionQualifiedVariablesType{
+				"recovery": {
+					BoardAvbKeyPath:               "external/avb/test/data/testkey_rsa4096.pem",
+					BoardAvbAlgorithm:             "SHA256_RSA4096",
+					BoardAvbRollbackIndex:         "0",
+					BoardAvbRollbackIndexLocation: "1",
+				},
+			}
+		}),
+	).RunTestWithBp(t, "")
+
+	generatedVbmetaImage := result.ModuleForTests(t, "test_product_generated_vbmeta_image", "android_common").Output("vbmeta.img")
+	android.AssertStringDoesNotContain(t,
+		"recovery ramdisk must not be included in vbmeta without a standalone image",
+		generatedVbmetaImage.RuleParams.Command,
+		"recovery",
+	)
+}
+
 func TestVbmetaGenerationWithPvmfw(t *testing.T) {
 	result := android.GroupFixturePreparers(
 		android.PrepareForIntegrationTestWithAndroid,
