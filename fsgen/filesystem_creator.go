@@ -775,6 +775,11 @@ func (f *filesystemCreator) createDeviceModule(
 		Vendor_exception_paths:               partitionVars.VendorExceptionPaths,
 		Vendor_exception_modules:             partitionVars.VendorExceptionModules,
 	}
+	if !ctx.Config().KatiEnabled() {
+		if kernel := activeSoongKernelModule(ctx); kernel != "" {
+			deviceProps.Required_modules = []string{strings.TrimPrefix(kernel, ":") + "_modules_installers"}
+		}
+	}
 
 	if buildingInitBootImage(partitionVars) {
 		// https://cs.android.com/android/_/android/platform/build/+/045a3d6a3e359633a14853a5a5e1e4f2a11cbdae:core/Makefile;l=6869-6873;drc=a951ebf0198006f7fd38073a05c442d0eb92f97b;bpv=1;bpt=0
@@ -1219,7 +1224,8 @@ func (f *filesystemCreator) createPartition(ctx android.LoadHookContext, partiti
 		}
 	}
 
-	if android.InList(partitionType, partitionsWithKernelModules) {
+	if android.InList(partitionType, partitionsWithKernelModules) ||
+		(partitionType == "recovery" && activeSoongKernelModule(ctx) != "") {
 		f.createPrebuiltKernelModules(ctx, partitionType)
 	}
 	if partitionType == "vendor_ramdisk_fragment_dlkm" {
@@ -1389,6 +1395,14 @@ func (f *filesystemCreator) createProductConfigDistGenrules(ctx android.LoadHook
 // This ensures that the depmod artifacts (modules.* installed in /lib/modules/) are generated with a complete view.
 func (f *filesystemCreator) createPrebuiltKernelModules(ctx android.LoadHookContext, partitionType string) {
 	fsGenState := ctx.Config().Get(fsGenStateOnceKey).(*FsGenState)
+	if partitionType == "vendor_ramdisk" && buildingVendorRamdiskFragmentDlkm(ctx, ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse) {
+		// The vendor ramdisk fragment owns these modules in this configuration.
+		return
+	}
+	if addSoongKernelModuleInstallerDep(ctx.Config(), fsGenState, activeSoongKernelModule(ctx), partitionType) {
+		return
+	}
+
 	name := generatedModuleName(ctx.Config(), fmt.Sprintf("%s-kernel-modules", partitionType))
 	partitionVars := ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse
 	commonProps := &struct {
@@ -1528,6 +1542,28 @@ func (f *filesystemCreator) createPrebuiltKernelModules(ctx android.LoadHookCont
 	kernelModule.HideFromMake()
 	// Add to deps
 	(*fsGenState.fsDeps[partitionType])[name] = defaultDepCandidateProps(ctx.Config())
+}
+
+// addSoongKernelModuleInstallerDep connects the module installers created by
+// the selected Soong kernel to the generated filesystem that must contain them.
+// The installer modules already package modules.load and the module files, so
+// generating a second installer from Make migration variables would omit them
+// when those legacy source lists are empty.
+func addSoongKernelModuleInstallerDep(config android.Config, fsGenState *FsGenState, kernelModule, partitionType string) bool {
+	if kernelModule == "" {
+		return false
+	}
+
+	installerPartition := partitionType
+	switch partitionType {
+	case "system_dlkm", "vendor_dlkm", "vendor_ramdisk", "recovery":
+	default:
+		return false
+	}
+
+	name := strings.TrimPrefix(kernelModule, ":") + "_modules_" + installerPartition
+	(*fsGenState.fsDeps[partitionType])[name] = defaultDepCandidateProps(config)
+	return true
 }
 
 // Create an android_info module. This will be used to create /vendor/build.prop

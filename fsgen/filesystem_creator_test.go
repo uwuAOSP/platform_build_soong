@@ -245,6 +245,44 @@ func TestOdmManifestIsAddedToOdmFilesystemDeps(t *testing.T) {
 	}
 }
 
+func TestSoongKernelModuleInstallersAreAddedToFilesystemDeps(t *testing.T) {
+	result := android.GroupFixturePreparers(
+		android.PrepareForIntegrationTestWithAndroid,
+		android.PrepareForTestWithAndroidBuildComponents,
+		android.PrepareForTestWithAllowMissingDependencies,
+		prepareForTestWithFsgenBuildComponents,
+		android.FixtureMergeMockFs(android.MockFS{
+			"build/soong/fsgen/Android.bp": []byte(`soong_filesystem_creator { name: "foo", }`),
+		}),
+	).RunTestWithBp(t, "")
+
+	state := &FsGenState{
+		fsDeps: map[string]*multilibDeps{
+			"system_dlkm":          {},
+			"vendor_dlkm":          {},
+			"vendor_ramdisk":       {},
+			"recovery":             {},
+			"vendor_ramdisk-debug": {},
+		},
+	}
+
+	for _, partition := range []string{"system_dlkm", "vendor_dlkm", "vendor_ramdisk", "recovery"} {
+		if !addSoongKernelModuleInstallerDep(result.TestContext.Config(), state, "kernel", partition) {
+			t.Fatalf("Expected Soong kernel installer for %s to be selected", partition)
+		}
+		if _, exists := (*state.fsDeps[partition])["kernel_modules_"+partition]; !exists {
+			t.Errorf("Expected kernel_modules_%s in %s filesystem deps", partition, partition)
+		}
+	}
+
+	if addSoongKernelModuleInstallerDep(result.TestContext.Config(), state, "kernel", "vendor_ramdisk-debug") {
+		t.Fatal("Did not expect regular vendor ramdisk installer in debug ramdisk deps")
+	}
+	if addSoongKernelModuleInstallerDep(result.TestContext.Config(), state, "", "vendor_dlkm") {
+		t.Fatal("Did not expect a kernel installer when no Soong kernel is selected")
+	}
+}
+
 func createProductPackagesSet(pkgs []string) map[string]android.ProductPackagesVariables {
 	productPackagesSet := make(map[string]android.ProductPackagesVariables)
 	productPackagesSet["all"] = android.ProductPackagesVariables{
