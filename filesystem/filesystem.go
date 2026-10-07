@@ -1051,7 +1051,8 @@ func (f *filesystem) buildFsConfigRoot(ctx android.ModuleContext) (android.Outpu
 	builder := android.NewRuleBuilder(pctx, ctx).SandboxDisabled()
 	builder.Command().Text("rm -rf").Text(rootDir.String()).Text("&& mkdir -p").Text(rootDir.String())
 	configCount := 0
-	ctx.VisitDirectDepsProxy(func(dep android.ModuleProxy) {
+	visited := make(map[string]bool)
+	ctx.WalkDepsProxy(func(dep, _ android.ModuleProxy) bool {
 		name := dep.Name()
 		var partition, filename string
 		if strings.HasPrefix(name, "fs_config_files_") {
@@ -1061,21 +1062,32 @@ func (f *filesystem) buildFsConfigRoot(ctx android.ModuleContext) (android.Outpu
 			partition = strings.TrimPrefix(name, "fs_config_dirs_")
 			filename = "fs_config_dirs"
 		} else {
-			return
+			return true
 		}
+		// The nonsystem modules are phony aggregators for the enabled non-system
+		// partition configs. Their outputs are the children below, not a config
+		// file for a partition named "nonsystem".
+		if partition == "nonsystem" {
+			return true
+		}
+		if visited[dep.String()] {
+			return true
+		}
+		visited[dep.String()] = true
 		outputs := android.GetOutputFiles(ctx, dep)
 		if outputs == nil || len(outputs.DefaultOutputFiles) == 0 {
 			ctx.ModuleErrorf("fs_config module %s does not provide an output", name)
-			return
+			return true
 		}
 		if len(outputs.DefaultOutputFiles) != 1 {
 			ctx.ModuleErrorf("fs_config module %s provides %d outputs, expected one", name, len(outputs.DefaultOutputFiles))
-			return
+			return true
 		}
 		output := android.PathForModuleOut(ctx, "fs_config_root", partition, "etc", filename)
 		builder.Command().Text("mkdir -p").Text(filepath.Dir(output.String()))
 		builder.Command().Text("cp").Input(outputs.DefaultOutputFiles[0]).Output(output)
 		configCount++
+		return true
 	})
 	if configCount == 0 {
 		return android.OutputPath{}, nil

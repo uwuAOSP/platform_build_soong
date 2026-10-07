@@ -177,6 +177,69 @@ func TestFilesystemUsesExplicitFsConfigInputs(t *testing.T) {
 	android.AssertStringDoesContain(t, "filesystem_config does not depend on assembled fs_config inputs", strings.Join(fsConfigBuildParams.Implicits.Strings(), " "), "fs_config_root.timestamp")
 }
 
+func TestFilesystemExpandsNonsystemFsConfigAggregates(t *testing.T) {
+	t.Parallel()
+	result := android.GroupFixturePreparers(
+		fixture,
+		android.FixtureMergeMockFs(android.MockFS{
+			"vendor_fs_config_files": nil,
+			"vendor_fs_config_dirs":  nil,
+			"odm_fs_config_files":    nil,
+			"odm_fs_config_dirs":     nil,
+		}),
+	).RunTestWithBp(t, `
+		android_filesystem {
+			name: "myvendor",
+			partition_type: "vendor",
+			deps: ["fs_config_files_nonsystem", "fs_config_dirs_nonsystem"],
+		}
+
+		phony {
+			name: "fs_config_files_nonsystem",
+			required: ["fs_config_files_vendor", "fs_config_files_odm"],
+		}
+
+		phony {
+			name: "fs_config_dirs_nonsystem",
+			required: ["fs_config_dirs_vendor", "fs_config_dirs_odm"],
+		}
+
+		prebuilt_etc {
+			name: "fs_config_files_vendor",
+			filename: "fs_config_files",
+			src: "vendor_fs_config_files",
+			vendor: true,
+		}
+
+		prebuilt_etc {
+			name: "fs_config_dirs_vendor",
+			filename: "fs_config_dirs",
+			src: "vendor_fs_config_dirs",
+			vendor: true,
+		}
+
+		prebuilt_etc {
+			name: "fs_config_files_odm",
+			filename: "fs_config_files",
+			src: "odm_fs_config_files",
+			device_specific: true,
+		}
+
+		prebuilt_etc {
+			name: "fs_config_dirs_odm",
+			filename: "fs_config_dirs",
+			src: "odm_fs_config_dirs",
+			device_specific: true,
+		}
+	`)
+	rootRule := result.ModuleForTests(t, "myvendor", "android_common").Description("Assemble explicit fs_config lookup inputs")
+	android.AssertStringDoesContain(t, "vendor file config is not staged", rootRule.RuleParams.Command, "fs_config_root/vendor/etc/fs_config_files")
+	android.AssertStringDoesContain(t, "vendor directory config is not staged", rootRule.RuleParams.Command, "fs_config_root/vendor/etc/fs_config_dirs")
+	android.AssertStringDoesContain(t, "ODM file config is not staged", rootRule.RuleParams.Command, "fs_config_root/odm/etc/fs_config_files")
+	android.AssertStringDoesContain(t, "ODM directory config is not staged", rootRule.RuleParams.Command, "fs_config_root/odm/etc/fs_config_dirs")
+	android.AssertStringDoesNotContain(t, "nonsystem aggregate is treated as a partition", rootRule.RuleParams.Command, "fs_config_root/nonsystem")
+}
+
 func TestFileSystemFillsLinkerConfigWithStubLibs(t *testing.T) {
 	t.Parallel()
 	result := fixture.RunTestWithBp(t, `
