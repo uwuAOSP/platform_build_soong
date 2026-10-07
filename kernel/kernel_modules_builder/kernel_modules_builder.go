@@ -88,6 +88,13 @@ func main() {
 	cmd(*soongZip, args...)
 
 	zipsToMerge := []string{modulesZip}
+	installNames := make(map[string]struct{}, len(modules))
+	for _, module := range modules {
+		installNames[filepath.Base(module)] = struct{}{}
+	}
+	if additionalZip := packageAdditionalLoadFiles(&props, installNames); additionalZip != "" {
+		zipsToMerge = append(zipsToMerge, additionalZip)
+	}
 
 	runDepmod(modules, loadFile, String(props.System_dep), &zipsToMerge)
 	installBlocklistFile(&props, &zipsToMerge)
@@ -103,6 +110,58 @@ func main() {
 	// Move to output locations
 	must(os.Rename(loadFile, outLoadFile))
 	must(os.Rename(allInstallsZip, outInstallZip))
+}
+
+// Copies additional load lists from the source archive into a small zip that is
+// merged with the installed module files. These lists do not alter modules.load.
+func packageAdditionalLoadFiles(props *common.PrebuiltKernelModulesPropertiesJSON, installed map[string]struct{}) string {
+	if len(props.Zip.Additional_load_files) == 0 {
+		return ""
+	}
+	if props.Zip.Src == nil {
+		fmt.Fprintln(os.Stderr, "Additional_load_files requires Zip.Src")
+		os.Exit(1)
+	}
+
+	f := must2(os.Open(*props.Zip.Src))
+	defer f.Close()
+	reader := must2(zip.NewReader(f, must2(f.Stat()).Size()))
+	dir := filepath.Join(outDir, "additional_load_files")
+	must(os.MkdirAll(dir, 0o777))
+	seen := make(map[string]struct{}, len(props.Zip.Additional_load_files))
+	for _, item := range props.Zip.Additional_load_files {
+		if item.Source == "" || item.Install == "" || filepath.Base(item.Source) != item.Source || filepath.Base(item.Install) != item.Install {
+			fmt.Fprintf(os.Stderr, "Invalid additional load file mapping: source=%q install=%q\n", item.Source, item.Install)
+			os.Exit(1)
+		}
+		if _, ok := seen[item.Install]; ok {
+			fmt.Fprintf(os.Stderr, "Duplicate additional load file destination: %q\n", item.Install)
+			os.Exit(1)
+		}
+		seen[item.Install] = struct{}{}
+
+		contents := string(readZipFile(reader, item.Source))
+		for lineNumber, line := range strings.Split(contents, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			name := filepath.Base(line)
+			if name != line {
+				fmt.Fprintf(os.Stderr, "Invalid module path in %s at line %d: %q\n", item.Source, lineNumber+1, line)
+				os.Exit(1)
+			}
+			if _, ok := installed[name]; !ok {
+				fmt.Fprintf(os.Stderr, "Module %q in %s is not included in the install list\n", name, item.Source)
+				os.Exit(1)
+			}
+		}
+		must(os.WriteFile(filepath.Join(dir, item.Install), []byte(contents), 0o666))
+	}
+
+	archive := filepath.Join(outDir, "additional_load_files.zip")
+	cmd(*soongZip, "-o", archive, "-C", dir, "-D", dir)
+	return archive
 }
 
 func runDepmod(modules []string, loadFile string, systemModulesZip string, zipsToMerge *[]string) {

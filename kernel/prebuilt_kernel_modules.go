@@ -102,6 +102,10 @@ type PrebuiltKernelModulesProperties struct {
 		// List of extra kernel modules to add to the load file.
 		Extra_loads []string
 
+		// Additional load files to install from the zip. Their modules must be
+		// included in the install file or the primary load file.
+		Additional_load_files []common.AdditionalLoadFile
+
 		// The name of a file inside the zip listing all modules to install.
 		// This may be a superset of Load_file.
 		Install_file *string
@@ -115,6 +119,9 @@ type PrebuiltKernelModulesProperties struct {
 		Srcs_16k_cfg_file *string
 	}
 }
+
+// Alias exposed for vendor kernel build plugins that configure extra load lists.
+type AdditionalLoadFile = common.AdditionalLoadFile
 
 func (p *PrebuiltKernelModulesProperties) resolve(ctx android.ModuleContext, command *android.RuleBuilderCommand) common.PrebuiltKernelModulesPropertiesJSON {
 	var systemDep *string
@@ -156,12 +163,13 @@ func (p *PrebuiltKernelModulesProperties) resolve(ctx android.ModuleContext, com
 		Installable:           p.Installable,
 		Strip_debug_symbols:   p.Strip_debug_symbols,
 		Zip: common.ZipProperties{
-			Src:               zip,
-			Load_file:         p.Zip.Load_file,
-			Extra_loads:       p.Zip.Extra_loads,
-			Install_file:      p.Zip.Install_file,
-			Blocklist_file:    p.Zip.Blocklist_file,
-			Srcs_16k_cfg_file: p.Zip.Srcs_16k_cfg_file,
+			Src:                   zip,
+			Load_file:             p.Zip.Load_file,
+			Extra_loads:           p.Zip.Extra_loads,
+			Additional_load_files: p.Zip.Additional_load_files,
+			Install_file:          p.Zip.Install_file,
+			Blocklist_file:        p.Zip.Blocklist_file,
+			Srcs_16k_cfg_file:     p.Zip.Srcs_16k_cfg_file,
 		},
 	}
 }

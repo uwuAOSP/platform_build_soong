@@ -63,6 +63,9 @@ type ZipProperties struct {
 	// List of extra kernel modules to add to the load file.
 	Extra_loads []string `json:",omitempty"`
 
+	// Additional load files copied from the input zip into the install zip.
+	Additional_load_files []AdditionalLoadFile `json:",omitempty"`
+
 	// Optional file in the zip listing all modules to install. When omitted,
 	// the load file remains the install list for backwards compatibility.
 	Install_file *string `json:",omitempty"`
@@ -74,6 +77,14 @@ type ZipProperties struct {
 	// to determine the list of 16k kernel modules, taken from all the modprobe| lines
 	// in the cfg file.
 	Srcs_16k_cfg_file *string `json:",omitempty"`
+}
+
+type AdditionalLoadFile struct {
+	// Name of the load file inside the input zip.
+	Source string `json:",omitempty"`
+
+	// Name of the load file in the installed modules directory.
+	Install string `json:",omitempty"`
 }
 
 func (p *PrebuiltKernelModulesPropertiesJSON) ToJSON() string {
