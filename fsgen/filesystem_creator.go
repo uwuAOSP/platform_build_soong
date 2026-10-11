@@ -1399,7 +1399,7 @@ func (f *filesystemCreator) createPrebuiltKernelModules(ctx android.LoadHookCont
 		// The vendor ramdisk fragment owns these modules in this configuration.
 		return
 	}
-	if addSoongKernelModuleInstallerDep(ctx.Config(), fsGenState, activeSoongKernelModule(ctx), partitionType) {
+	if addSoongKernelModuleInstallerCandidate(fsGenState, activeSoongKernelModule(ctx), partitionType) {
 		return
 	}
 
@@ -1544,12 +1544,11 @@ func (f *filesystemCreator) createPrebuiltKernelModules(ctx android.LoadHookCont
 	(*fsGenState.fsDeps[partitionType])[name] = defaultDepCandidateProps(ctx.Config())
 }
 
-// addSoongKernelModuleInstallerDep connects the module installers created by
-// the selected Soong kernel to the generated filesystem that must contain them.
-// The installer modules already package modules.load and the module files, so
-// generating a second installer from Make migration variables would omit them
-// when those legacy source lists are empty.
-func addSoongKernelModuleInstallerDep(config android.Config, fsGenState *FsGenState, kernelModule, partitionType string) bool {
+// addSoongKernelModuleInstallerCandidate lets the dependency collector select
+// installers that the Soong kernel actually creates. A kernel may disable modules
+// entirely or omit a partition's install lists, so installer names are not deps
+// until their enabled variants have been collected.
+func addSoongKernelModuleInstallerCandidate(fsGenState *FsGenState, kernelModule, partitionType string) bool {
 	if kernelModule == "" {
 		return false
 	}
@@ -1562,7 +1561,7 @@ func addSoongKernelModuleInstallerDep(config android.Config, fsGenState *FsGenSt
 	}
 
 	name := strings.TrimPrefix(kernelModule, ":") + "_modules_" + installerPartition
-	(*fsGenState.fsDeps[partitionType])[name] = defaultDepCandidateProps(config)
+	fsGenState.depCandidatesMap[name] = true
 	return true
 }
 

@@ -229,7 +229,7 @@ func (m *moduleToInstallationProps) SortedKeys() []string {
 // Information necessary to generate the filesystem modules, including details about their
 // dependencies
 type FsGenState struct {
-	// List of modules in `PRODUCT_PACKAGES` and `PRODUCT_PACKAGES_DEBUG`
+	// Modules in PRODUCT_PACKAGES, generated prebuilts and optional kernel installers.
 	depCandidatesMap map[string]bool
 	// Map of names of partition to the information of modules to be added as deps
 	fsDeps map[string]*multilibDeps

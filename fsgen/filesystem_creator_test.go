@@ -245,18 +245,9 @@ func TestOdmManifestIsAddedToOdmFilesystemDeps(t *testing.T) {
 	}
 }
 
-func TestSoongKernelModuleInstallersAreAddedToFilesystemDeps(t *testing.T) {
-	result := android.GroupFixturePreparers(
-		android.PrepareForIntegrationTestWithAndroid,
-		android.PrepareForTestWithAndroidBuildComponents,
-		android.PrepareForTestWithAllowMissingDependencies,
-		prepareForTestWithFsgenBuildComponents,
-		android.FixtureMergeMockFs(android.MockFS{
-			"build/soong/fsgen/Android.bp": []byte(`soong_filesystem_creator { name: "foo", }`),
-		}),
-	).RunTestWithBp(t, "")
-
+func TestSoongKernelModuleInstallersAreAddedToFilesystemCandidates(t *testing.T) {
 	state := &FsGenState{
+		depCandidatesMap: map[string]bool{},
 		fsDeps: map[string]*multilibDeps{
 			"system_dlkm":          {},
 			"vendor_dlkm":          {},
@@ -267,18 +258,21 @@ func TestSoongKernelModuleInstallersAreAddedToFilesystemDeps(t *testing.T) {
 	}
 
 	for _, partition := range []string{"system_dlkm", "vendor_dlkm", "vendor_ramdisk", "recovery"} {
-		if !addSoongKernelModuleInstallerDep(result.TestContext.Config(), state, "kernel", partition) {
+		if !addSoongKernelModuleInstallerCandidate(state, "kernel", partition) {
 			t.Fatalf("Expected Soong kernel installer for %s to be selected", partition)
 		}
-		if _, exists := (*state.fsDeps[partition])["kernel_modules_"+partition]; !exists {
-			t.Errorf("Expected kernel_modules_%s in %s filesystem deps", partition, partition)
+		if !state.depCandidatesMap["kernel_modules_"+partition] {
+			t.Errorf("Expected kernel_modules_%s as a filesystem candidate", partition)
+		}
+		if len(*state.fsDeps[partition]) != 0 {
+			t.Errorf("Unexpected filesystem deps before collecting %s installers", partition)
 		}
 	}
 
-	if addSoongKernelModuleInstallerDep(result.TestContext.Config(), state, "kernel", "vendor_ramdisk-debug") {
+	if addSoongKernelModuleInstallerCandidate(state, "kernel", "vendor_ramdisk-debug") {
 		t.Fatal("Did not expect regular vendor ramdisk installer in debug ramdisk deps")
 	}
-	if addSoongKernelModuleInstallerDep(result.TestContext.Config(), state, "", "vendor_dlkm") {
+	if addSoongKernelModuleInstallerCandidate(state, "", "vendor_dlkm") {
 		t.Fatal("Did not expect a kernel installer when no Soong kernel is selected")
 	}
 }
