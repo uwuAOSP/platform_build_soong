@@ -1745,6 +1745,38 @@ cc_binary {
 		exists,
 	)
 }
+func TestCrossPartitionRequiredDepsSkipNamespaceModules(t *testing.T) {
+	result := android.GroupFixturePreparers(
+		android.PrepareForIntegrationTestWithAndroid,
+		android.PrepareForTestWithAndroidBuildComponents,
+		android.PrepareForTestWithAllowMissingDependencies,
+		prepareForTestWithFsgenBuildComponents,
+		android.PrepareForTestWithNamespace,
+		prepareMockRamdiksNodeList,
+		android.FixtureMergeMockFs(android.MockFS{
+			"external/avb/test/data/testkey_rsa4096.pem": nil,
+			"build/soong/fsgen/Android.bp":               []byte(`soong_filesystem_creator {name: "foo",}`),
+			"unused/Android.bp":                          []byte(`soong_namespace {}`),
+		}),
+	).RunTestWithBp(t, `soong_namespace {}`)
+
+	var namespaces []string
+	result.VisitAllModulesProxies(func(module android.ModuleProxy) {
+		if result.ModuleType(module) == "soong_namespace" {
+			namespaces = append(namespaces, module.Name())
+		}
+	})
+	android.AssertIntEquals(t, "Both namespace modules must participate in analysis without querying their install partition", 2, len(namespaces))
+	state := result.TestContext.Config().Get(fsGenStateOnceKey).(*FsGenState)
+	for partition, deps := range state.fsDeps {
+		for _, name := range namespaces {
+			if _, exists := (*deps)[name]; exists {
+				t.Errorf("Namespace %q must not be installed in %s", name, partition)
+			}
+		}
+	}
+}
+
 func TestCrossPartitionRequiredModulesAcrossNamespaces(t *testing.T) {
 	result := android.GroupFixturePreparers(
 		android.PrepareForIntegrationTestWithAndroid,

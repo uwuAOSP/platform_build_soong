@@ -676,6 +676,11 @@ func crossPartitionRequiredMutator(mctx android.BottomUpMutatorContext) {
 	if !shouldEnableFilesystemCreator(mctx) {
 		return
 	}
+	// Match collectDepsMutator's scope before querying installation properties.
+	// Namespace modules do not initialize ModuleBase's underlying module pointer.
+	if mctx.Module().Target().Os.Class != android.Device || !isEligibleForFsDeps(mctx) {
+		return
+	}
 	fsGenState := mctx.Config().Get(fsGenStateOnceKey).(*FsGenState)
 	fsGenState.fsDepsMutex.Lock()
 	defer fsGenState.fsDepsMutex.Unlock()
