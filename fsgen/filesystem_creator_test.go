@@ -1234,6 +1234,10 @@ func TestCrossPartitionSharedLibDeps(t *testing.T) {
 		java.PrepareForTestWithJavaBuildComponents,
 		prepareMockRamdiksNodeList,
 		android.PrepareForTestWithNamespace,
+		android.PrepareForTestWithNeverallowRules([]android.Rule{
+			android.NeverAllow().In("build/soong/fsgen").InDirectDeps("internal_only_lib").
+				Because("Private same-partition dependencies must not become filesystem roots"),
+		}),
 		android.FixtureMergeMockFs(android.MockFS{
 			"external/avb/test/data/testkey_rsa4096.pem": nil,
 			"build/soong/fsgen/Android.bp": []byte(`
@@ -1253,9 +1257,17 @@ cc_binary {
 }
 cc_library_shared {
 	name: "system_lib",
+	shared_libs: ["internal_only_lib"],
+}
+cc_library_shared {
+	name: "internal_only_lib",
+	installable: false,
 }
 `)
 	resolvedDeps := result.TestContext.Config().Get(fsGenStateOnceKey).(*FsGenState).fsDeps["system"]
+	if _, exists := (*resolvedDeps)["internal_only_lib"]; exists {
+		t.Error("Same-partition private dependencies must keep their original installation semantics")
+	}
 	xPartitionSharedLib := (*resolvedDeps)["system_lib"]
 	android.AssertIntEquals(
 		t,
@@ -1365,12 +1377,15 @@ cc_library_shared {
 `)
 
 	state := result.TestContext.Config().Get(fsGenStateOnceKey).(*FsGenState)
-	for _, sharedLib := range []string{"vendor_direct_lib", "vendor_transitive_lib", "vendor_nested_lib"} {
+	for _, sharedLib := range []string{"vendor_direct_lib", "vendor_transitive_lib"} {
 		dep, exists := (*state.fsDeps["vendor"])[sharedLib]
 		if !exists {
 			t.Fatalf("Expected ODM shared library dependency %s in vendor filesystem deps", sharedLib)
 		}
 		android.AssertIntEquals(t, "Both architectures must survive the transitive walk", 2, len(android.SortedUniqueStrings(getBitness(dep.Arch))))
+	}
+	if _, exists := (*state.fsDeps["vendor"])["vendor_nested_lib"]; exists {
+		t.Error("Same-partition transitive libraries must not be promoted to vendor image roots")
 	}
 	for name, arch := range map[string]android.ArchType{"vendor32_leaf": android.Arm, "vendor64_leaf": android.Arm64} {
 		dep := (*state.fsDeps["vendor"])[name]

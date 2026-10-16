@@ -1089,7 +1089,12 @@ func correctCrossPartitionRequiredDeps(config android.Config) map[crossPartition
 				if !ok {
 					continue
 				}
-				require(name, depProps, true)
+				// The packaging graph already follows same-partition install
+				// dependencies and respects APEX/stub installation semantics.
+				// Only a cross-partition edge needs another filesystem root.
+				if depProps.Partition != props.Partition {
+					require(name, depProps, true)
+				}
 				stack = append(stack, visit{name, depProps, true})
 			}
 		}
