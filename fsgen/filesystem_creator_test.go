@@ -874,6 +874,71 @@ func TestPrebuiltEtcModuleGen(t *testing.T) {
 	)
 }
 
+func TestProductCopyFilesPreserveFirmwareAndDspDestinations(t *testing.T) {
+	partitions := []string{"system", "system_ext", "product", "vendor", "odm"}
+	directories := []string{"firmware", "firmware/subdir", "etc/firmware", "dsp", "dsp/subdir", "etc/dsp", "etc_extra"}
+	var copyFiles, expected []string
+	for _, partition := range partitions {
+		for _, dir := range directories {
+			for _, filename := range []string{"firmware.bin", "renamed.bin"} {
+				destination := partition + "/" + dir + "/" + filename
+				copyFiles = append(copyFiles, "device/sample/firmware.bin:"+destination)
+				expected = append(expected, destination)
+			}
+		}
+	}
+	result := android.GroupFixturePreparers(
+		android.PrepareForIntegrationTestWithAndroid,
+		android.PrepareForTestWithAndroidBuildComponents,
+		android.PrepareForTestWithAllowMissingDependencies,
+		filesystem.PrepareForTestWithFilesystemBuildComponents,
+		prepareForTestWithFsgenBuildComponents,
+		prepareMockRamdiksNodeList,
+		android.PrepareForTestWithHostTools("conv_linker_config"),
+		android.FixtureMergeMockFs(android.MockFS{
+			"device/sample/firmware.bin":                 nil,
+			"external/avb/test/data/testkey_rsa4096.pem": nil,
+			"build/soong/fsgen/Android.bp":               []byte(`soong_filesystem_creator {name: "foo",}`),
+		}),
+		android.FixtureModifyConfig(func(config android.Config) {
+			config.TestProductVariables.BuildingVendorImage = proptools.BoolPtr(true)
+			config.TestProductVariables.BuildingOdmImage = proptools.BoolPtr(true)
+			vars := &config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse
+			vars.ProductCopyFiles = copyFiles
+			vars.PartitionQualifiedVariables = map[string]android.PartitionQualifiedVariablesType{}
+			for _, partition := range partitions {
+				vars.PartitionQualifiedVariables[partition] = android.PartitionQualifiedVariablesType{BoardFileSystemType: "ext4", BuildingImage: true}
+			}
+		}),
+	).RunTest(t)
+
+	var packaged []string
+	result.VisitAllModules(func(module android.Module) {
+		if _, ok := module.(*etc.PrebuiltEtc); !ok {
+			return
+		}
+		for _, spec := range android.GetInstallFiles(result, module).PackagingSpecs {
+			packaged = append(packaged, spec.Partition()+"/"+spec.RelPathInPackage())
+		}
+	})
+	for _, destination := range expected {
+		android.AssertStringListContains(t, "Copy destination must survive prebuilt module generation", packaged, destination)
+	}
+	for _, partition := range partitions {
+		image := result.ModuleForTests(t, "test_product_generated_"+partition+"_image", "android_common")
+		info := android.OtherModuleProviderOrDefault(result, image.Module(), filesystem.FilesystemProvider)
+		var installed []string
+		for _, file := range info.FullInstallPaths {
+			installed = append(installed, file.FullInstallPath.String())
+		}
+		for _, dir := range directories {
+			for _, filename := range []string{"firmware.bin", "renamed.bin"} {
+				android.AssertStringDoesContain(t, "Final staging must preserve the copy destination", strings.Join(installed, " "), "/"+partition+"/"+dir+"/"+filename)
+			}
+		}
+	}
+}
+
 func TestProductCopyFilesMissingFirstSourceIsAnError(t *testing.T) {
 	android.GroupFixturePreparers(
 		android.PrepareForIntegrationTestWithAndroid,

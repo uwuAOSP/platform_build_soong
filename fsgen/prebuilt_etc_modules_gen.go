@@ -240,17 +240,16 @@ type prebuiltInstallInRootProperties struct {
 }
 
 var (
+	// Firmware and DSP factories change their base directory with soc_specific.
+	// PRODUCT_COPY_FILES specifies exact destinations: use prebuilt_etc for
+	// etc/... and the prebuilt_any fallback for partition-root firmware/dsp.
 	etcInstallPathToFactoryList = map[string]android.ModuleFactory{
 		"":                    etc.PrebuiltRootFactory,
 		"avb":                 etc.PrebuiltAvbFactory,
 		"bin":                 etc.PrebuiltBinaryFactory,
 		"bt_firmware":         etc.PrebuiltBtFirmwareFactory,
 		"cacerts":             etc.PrebuiltEtcCaCertsFactory,
-		"dsp":                 etc.PrebuiltDSPFactory,
 		"etc":                 etc.PrebuiltEtcFactory,
-		"etc/dsp":             etc.PrebuiltDSPFactory,
-		"etc/firmware":        etc.PrebuiltFirmwareFactory,
-		"firmware":            etc.PrebuiltFirmwareFactory,
 		"gpu":                 etc.PrebuiltGPUFactory,
 		"first_stage_ramdisk": etc.PrebuiltFirstStageRamdiskFactory,
 		"fonts":               etc.PrebuiltFontFactory,
@@ -382,7 +381,7 @@ func createPrebuiltEtcModulesInDirectory(ctx android.LoadHookContext, partition,
 		for _, etcInstallPath := range android.SortedKeys(etcInstallPathToFactoryList) {
 			// Do not break when found but iterate until the end to find a module with more
 			// specific install path
-			if strings.HasPrefix(destDir, etcInstallPath) {
+			if isSubdirectory(etcInstallPath, destDir) {
 				etcInstallPathKey = etcInstallPath
 			}
 		}
