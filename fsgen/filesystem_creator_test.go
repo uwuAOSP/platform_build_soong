@@ -1152,6 +1152,8 @@ func TestOdmCrossPartitionSharedLibDeps(t *testing.T) {
 		android.PrepareForTestWithAllowMissingDependencies,
 		prepareForTestWithFsgenBuildComponents,
 		cc.PrepareForTestWithCcBuildComponents,
+		filesystem.PrepareForTestWithFilesystemBuildComponents,
+		android.PrepareForTestWithHostTools("conv_linker_config"),
 		java.PrepareForTestWithJavaBuildComponents,
 		prepareMockRamdiksNodeList,
 		android.PrepareForTestWithNamespace,
@@ -1164,39 +1166,107 @@ func TestOdmCrossPartitionSharedLibDeps(t *testing.T) {
 		`),
 		}),
 		android.FixtureModifyConfig(func(config android.Config) {
-			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.ProductPackagesSet = createProductPackagesSet([]string{"odm_binary"})
+			config.TestProductVariables.BuildingVendorImage = proptools.BoolPtr(true)
+			config.TestProductVariables.BuildingOdmImage = proptools.BoolPtr(true)
+			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.ProductPackagesSet = createProductPackagesSet([]string{"odm_binary", "system_ext_binary"})
+			config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse.PartitionQualifiedVariables = map[string]android.PartitionQualifiedVariablesType{
+				"system": {BoardFileSystemType: "ext4", BuildingImage: true},
+				"vendor": {BoardFileSystemType: "ext4", BuildingImage: true},
+				"odm":    {BoardFileSystemType: "ext4", BuildingImage: true},
+			}
 		}),
 	).RunTestWithBp(t, `
+cc_defaults {
+	name: "library_defaults",
+	stl: "none",
+	system_shared_libs: [],
+	compile_multilib: "both",
+}
 cc_binary {
 	name: "odm_binary",
+	defaults: ["library_defaults"],
+	arch: {
+		arm: {suffix: "32", shared_libs: ["vendor32_leaf"]},
+		arm64: {suffix: "64", shared_libs: ["vendor64_leaf"]},
+	},
 	device_specific: true,
 	shared_libs: ["vendor_direct_lib", "odm_library"],
 }
 cc_library_shared {
+	defaults: ["library_defaults"],
 	name: "odm_library",
 	device_specific: true,
 	shared_libs: ["vendor_transitive_lib"],
 }
 cc_library_shared {
+	defaults: ["library_defaults"],
 	name: "vendor_direct_lib",
 	system_ext_specific: true,
 	vendor_available: true,
 	shared_libs: ["vendor_nested_lib"],
 }
 cc_library_shared {
+	defaults: ["library_defaults"],
 	name: "vendor_transitive_lib",
 	vendor: true,
 }
 cc_library_shared {
+	defaults: ["library_defaults"],
 	name: "vendor_nested_lib",
+	vendor_available: true,
+}
+cc_binary {
+	name: "system_ext_binary",
+	defaults: ["library_defaults"],
+	arch: {arm: {suffix: "32"}, arm64: {suffix: "64"}},
+	system_ext_specific: true,
+	shared_libs: ["vendor_direct_lib"],
+}
+cc_library_shared {
+	name: "vendor32_leaf",
 	vendor: true,
+	compile_multilib: "32",
+	stl: "none",
+	system_shared_libs: [],
+}
+cc_library_shared {
+	name: "vendor64_leaf",
+	vendor: true,
+	compile_multilib: "64",
+	stl: "none",
+	system_shared_libs: [],
 }
 `)
 
-	resolvedDeps := result.TestContext.Config().Get(fsGenStateOnceKey).(*FsGenState).fsDeps["vendor"]
+	state := result.TestContext.Config().Get(fsGenStateOnceKey).(*FsGenState)
 	for _, sharedLib := range []string{"vendor_direct_lib", "vendor_transitive_lib", "vendor_nested_lib"} {
-		if _, exists := (*resolvedDeps)[sharedLib]; !exists {
-			t.Errorf("Expected ODM shared library dependency %s in vendor filesystem deps", sharedLib)
+		dep, exists := (*state.fsDeps["vendor"])[sharedLib]
+		if !exists {
+			t.Fatalf("Expected ODM shared library dependency %s in vendor filesystem deps", sharedLib)
+		}
+		android.AssertIntEquals(t, "Both architectures must survive the transitive walk", 2, len(android.SortedUniqueStrings(getBitness(dep.Arch))))
+	}
+	for name, arch := range map[string]android.ArchType{"vendor32_leaf": android.Arm, "vendor64_leaf": android.Arm64} {
+		dep := (*state.fsDeps["vendor"])[name]
+		if dep == nil || len(dep.Arch) != 1 || dep.Arch[0] != arch {
+			t.Errorf("Expected only %s for %s, got %+v", arch, name, dep)
+		}
+	}
+	if _, exists := (*state.fsDeps["system"])["vendor_nested_lib"]; !exists {
+		t.Error("Expected the core variant of the same library in system deps as well")
+	}
+	vendor := result.ModuleForTests(t, "test_product_generated_vendor_image", "android_common")
+	info := android.OtherModuleProviderOrDefault(result, vendor.Module(), filesystem.FilesystemProvider)
+	var paths []string
+	for _, file := range info.FullInstallPaths {
+		paths = append(paths, file.FullInstallPath.String())
+	}
+	for _, name := range []string{"vendor_direct_lib", "vendor_transitive_lib", "vendor_nested_lib", "vendor32_leaf", "vendor64_leaf"} {
+		for _, dir := range []string{"lib", "lib64"} {
+			if (name == "vendor32_leaf" && dir == "lib64") || (name == "vendor64_leaf" && dir == "lib") {
+				continue
+			}
+			android.AssertStringDoesContain(t, "Final image must install the requested architecture", strings.Join(paths, " "), "/vendor/"+dir+"/"+name+".so")
 		}
 	}
 }
