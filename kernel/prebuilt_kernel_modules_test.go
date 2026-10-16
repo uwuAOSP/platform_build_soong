@@ -15,6 +15,7 @@
 package kernel
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"testing"
@@ -22,6 +23,38 @@ import (
 	"android/soong/android"
 	"android/soong/cc"
 )
+
+func TestKernelModulesDlkmPartitionTags(t *testing.T) {
+	for _, partition := range []string{"system_dlkm", "vendor_dlkm", "odm_dlkm"} {
+		t.Run(partition, func(t *testing.T) {
+			result := android.GroupFixturePreparers(
+				cc.PrepareForTestWithCcDefaultModules,
+				android.PrepareForTestWithHostTools("kernel_modules_builder", "zipsync", "soong_zip", "merge_zips", "depmod"),
+				android.FixtureRegisterWithContext(registerKernelBuildComponents),
+				android.FixtureAddFile("module.ko", nil),
+			).RunTestWithBp(t, fmt.Sprintf(`
+prebuilt_kernel_modules {
+	name: "modules",
+	srcs: ["module.ko"],
+	%s_specific: true,
+}
+`, partition))
+			module := result.ModuleForTests(t, "modules", "android_arm64_armv8-a").Module()
+			info := android.OtherModulePointerProviderOrDefault(result, module, android.CommonModuleInfoProvider)
+			android.AssertStringEquals(t, "fsgen must collect the DLKM installer in its owning partition", partition, info.PartitionTag)
+			specs := android.GetInstallFiles(result, module).PackagingSpecs
+			if len(specs) == 0 {
+				t.Fatal("kernel installer must package modules.load and its extra module archive")
+			}
+			for _, spec := range specs {
+				android.AssertStringEquals(t, "partition tag must agree with packaged kernel files", info.PartitionTag, spec.Partition())
+				if !spec.ExtraZip().Valid() {
+					t.Error("kernel modules archive must accompany modules.load")
+				}
+			}
+		})
+	}
+}
 
 func TestKernelModulesFilelist(t *testing.T) {
 	ctx := android.GroupFixturePreparers(

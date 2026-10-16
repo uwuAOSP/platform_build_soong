@@ -1490,8 +1490,12 @@ func (m *ModuleBase) PartitionTag(config DeviceConfig) string {
 		partition = "vendor_ramdisk"
 	} else if m.InstallInRecovery() {
 		partition = "recovery"
-	} else if m.InstallInVendorDlkm() {
-		partition = "vendor_dlkm"
+	} else if m.module.InstallInSystemDlkm() {
+		partition = strings.SplitN(config.SystemDlkmPath(), "/", 2)[0]
+	} else if m.module.InstallInVendorDlkm() {
+		partition = strings.SplitN(config.VendorDlkmPath(), "/", 2)[0]
+	} else if m.module.InstallInOdmDlkm() {
+		partition = strings.SplitN(config.OdmDlkmPath(), "/", 2)[0]
 	} else if m.InstallInDebugRamdisk() {
 		partition = "debug_ramdisk"
 	} else if m.InstallInTestHarnessRamdisk() {
