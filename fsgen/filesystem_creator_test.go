@@ -15,6 +15,7 @@
 package fsgen
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	"android/soong/etc"
 	"android/soong/filesystem"
 	"android/soong/java"
+	"android/soong/kernel"
 	"android/soong/phony"
 
 	"github.com/google/blueprint/proptools"
@@ -936,6 +938,65 @@ func TestProductCopyFilesPreserveFirmwareAndDspDestinations(t *testing.T) {
 				android.AssertStringDoesContain(t, "Final staging must preserve the copy destination", strings.Join(installed, " "), "/"+partition+"/"+dir+"/"+filename)
 			}
 		}
+	}
+}
+
+func TestSystemDlkmKernelModuleLoadList(t *testing.T) {
+	for _, loads := range [][]string{nil, {"zram.ko"}, {"zsmalloc.ko", "zram.ko"}} {
+		t.Run(strings.Join(loads, ","), func(t *testing.T) {
+			result := android.GroupFixturePreparers(
+				android.PrepareForIntegrationTestWithAndroid,
+				android.PrepareForTestWithAndroidBuildComponents,
+				android.PrepareForTestWithAllowMissingDependencies,
+				filesystem.PrepareForTestWithFilesystemBuildComponents,
+				kernel.PrepareForTestWithPrebuiltKernelModules,
+				prepareForTestWithFsgenBuildComponents,
+				prepareMockRamdiksNodeList,
+				android.PrepareForTestWithHostTools("kernel_modules_builder", "zipsync", "soong_zip", "merge_zips", "depmod", "conv_linker_config"),
+				android.FixtureMergeMockFs(android.MockFS{
+					"zram.ko":     nil,
+					"zsmalloc.ko": nil,
+					"external/avb/test/data/testkey_rsa4096.pem": nil,
+					"build/soong/fsgen/Android.bp":               []byte(`soong_filesystem_creator {name: "foo",}`),
+				}),
+				android.FixtureModifyConfig(func(config android.Config) {
+					vars := &config.TestProductVariables.PartitionVarsForSoongMigrationOnlyDoNotUse
+					vars.BuildingSystemDlkmImage = true
+					vars.SystemKernelModules = []string{"zram.ko", "zsmalloc.ko"}
+					vars.SystemKernelLoadModules = loads
+					vars.PartitionQualifiedVariables = map[string]android.PartitionQualifiedVariablesType{
+						"system_dlkm": {BoardFileSystemType: "ext4", BuildingImage: true},
+					}
+				}),
+			).RunTest(t)
+			installer := result.ModuleForTests(t, "test_product_generated_system_dlkm-kernel-modules", "android_arm64_armv8-a")
+			contents := android.ContentFromFileRuleForTests(t, result.TestContext, installer.Output("props.json"))
+			var props struct {
+				Src_filenames_to_load []string
+				Load_by_default       *bool
+			}
+			if err := json.Unmarshal([]byte(contents), &props); err != nil {
+				t.Fatal(err)
+			}
+			android.AssertDeepEquals(t, "modules.load must preserve the configured subset and order", loads, props.Src_filenames_to_load)
+			if len(loads) == 0 && proptools.BoolDefault(props.Load_by_default, true) {
+				t.Error("An empty system load list must not load every packaged module")
+			}
+			image := result.ModuleForTests(t, "test_product_generated_system_dlkm_image", "android_common")
+			info := android.OtherModuleProviderOrDefault(result, image.Module(), filesystem.FilesystemProvider)
+			var paths []string
+			for _, file := range info.FullInstallPaths {
+				paths = append(paths, file.FullInstallPath.String())
+			}
+			android.AssertStringDoesContain(t, "system_dlkm must stage its load list", strings.Join(paths, " "), "/system_dlkm/lib/modules/modules.load")
+			var archives []string
+			for _, spec := range android.GetInstallFiles(result, installer.Module()).PackagingSpecs {
+				if spec.ExtraZip().Valid() {
+					archives = append(archives, spec.ExtraZip().String())
+				}
+			}
+			android.AssertStringDoesContain(t, "The staged load list must carry the module archive", strings.Join(archives, " "), "installs.zip")
+		})
 	}
 }
 
