@@ -19,7 +19,47 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/google/blueprint/proptools"
 )
+
+type partitionTagTestModule struct {
+	ModuleBase
+	vendor, odm, product bool
+}
+
+func (m *partitionTagTestModule) GenerateAndroidBuildActions(ModuleContext) {}
+func (m *partitionTagTestModule) InstallInVendor() bool                     { return m.vendor }
+func (m *partitionTagTestModule) InstallInOdm() bool                        { return m.odm }
+func (m *partitionTagTestModule) InstallInProduct() bool                    { return m.product }
+
+func TestPartitionTagUsesVariantInstallPartition(t *testing.T) {
+	for _, test := range []struct {
+		name, vendorPath, odmPath, productPath, want string
+		vendor, odm, product, systemExt              bool
+	}{
+		{name: "core vendor variant", vendor: true, vendorPath: "vendor", want: "vendor"},
+		{name: "system_ext vendor variant", vendor: true, systemExt: true, vendorPath: "vendor", want: "vendor"},
+		{name: "vendor in system", vendor: true, vendorPath: "system/vendor", want: "system"},
+		{name: "odm variant", odm: true, odmPath: "odm", want: "odm"},
+		{name: "odm in vendor", odm: true, odmPath: "vendor/odm", want: "vendor"},
+		{name: "odm in system", odm: true, odmPath: "system/vendor/odm", want: "system"},
+		{name: "product variant", product: true, productPath: "product", want: "product"},
+		{name: "product in system", product: true, productPath: "system/product", want: "system"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := TestConfig(t.TempDir(), nil, "", nil)
+			config.TestProductVariables.VendorPath = proptools.StringPtr(test.vendorPath)
+			config.TestProductVariables.OdmPath = proptools.StringPtr(test.odmPath)
+			config.TestProductVariables.ProductPath = proptools.StringPtr(test.productPath)
+			m := &partitionTagTestModule{vendor: test.vendor, odm: test.odm, product: test.product}
+			InitAndroidModule(m)
+			m.commonProperties.System_ext_specific = proptools.BoolPtr(test.systemExt)
+			AssertStringEquals(t, "partition must follow the variant's install location", test.want,
+				m.PartitionTag(DeviceConfig{config.deviceConfig}))
+		})
+	}
+}
 
 func TestSrcIsModule(t *testing.T) {
 	type args struct {

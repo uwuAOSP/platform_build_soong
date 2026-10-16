@@ -1456,13 +1456,13 @@ func (m *ModuleBase) PartitionTag(config DeviceConfig) string {
 	partition := "system"
 	if m.module.InstallInData() {
 		partition = "userdata"
-	} else if m.SocSpecific() {
+	} else if m.SocSpecific() || m.module.InstallInVendor() {
 		// A SoC-specific module could be on the vendor partition at
 		// "vendor" or the system partition at "system/vendor".
 		if config.VendorPath() == "vendor" {
 			partition = "vendor"
 		}
-	} else if m.DeviceSpecific() {
+	} else if m.DeviceSpecific() || m.module.InstallInOdm() {
 		// A device-specific module could be on the odm partition at
 		// "odm", the vendor partition at "vendor/odm", or the system
 		// partition at "system/vendor/odm".
@@ -1471,7 +1471,7 @@ func (m *ModuleBase) PartitionTag(config DeviceConfig) string {
 		} else if strings.HasPrefix(config.OdmPath(), "vendor/") {
 			partition = "vendor"
 		}
-	} else if m.ProductSpecific() {
+	} else if m.ProductSpecific() || m.module.InstallInProduct() {
 		// A product-specific module could be on the product partition
 		// at "product" or the system partition at "system/product".
 		if config.ProductPath() == "product" {
