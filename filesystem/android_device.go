@@ -1662,6 +1662,9 @@ func (a *androidDevice) addMiscInfo(ctx android.ModuleContext) android.Path {
 		builder.Command().Textf("echo recovery_mkbootimg_args='%s' >> %s", args, miscInfo)
 	}
 	fsInfos := a.getFsInfos(ctx)
+	if ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardExcludeKernelFromRecoveryImage {
+		builder.Command().Textf("echo exclude_kernel_from_recovery_image=true >> %s", miscInfo)
+	}
 	if ctx.Config().ProductVariables().PartitionVarsForSoongMigrationOnlyDoNotUse.BoardUsesFullRecoveryImage {
 		builder.Command().Textf("echo full_recovery_image=true >> %s", miscInfo)
 	}
