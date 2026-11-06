@@ -218,20 +218,25 @@ func (a *androidDevice) copyFilesToProductOutForSoongOnly(ctx android.ModuleCont
 
 	// radio
 	if a.deviceProps.Radio_partition_name != nil {
-		radio := ctx.GetDirectDepProxyWithTag(*a.deviceProps.Radio_partition_name, radioDepTag)
-		files := android.OutputFilesForModule(ctx, radio, "")
-		for _, file := range files {
-			installPath := android.PathForModuleInPartitionInstall(ctx, "", file.Base())
-			ctx.Build(pctx, android.BuildParams{
-				Rule:   android.CpRule,
-				Input:  file,
-				Output: installPath,
-			})
-			deps = append(deps, installPath)
+		radio := getRadioModuleProxy(ctx, *a.deviceProps.Radio_partition_name)
+		if !radio.IsNil() {
+			files := android.OutputFilesForModule(ctx, radio, "")
+			for _, file := range files {
+				installPath := android.PathForModuleInPartitionInstall(ctx, "", file.Base())
+				ctx.Build(pctx, android.BuildParams{
+					Rule:   android.CpRule,
+					Input:  file,
+					Output: installPath,
+				})
+				deps = append(deps, installPath)
+			}
 		}
 	}
 	for _, name := range a.deviceProps.Radio_partition_names {
-		radio := ctx.GetDirectDepProxyWithTag(name, radioDepTag)
+		radio := getRadioModuleProxy(ctx, name)
+		if radio.IsNil() {
+			continue
+		}
 		files := android.OutputFilesForModule(ctx, radio, "")
 		for _, file := range files {
 			installPath := android.PathForModuleInPartitionInstall(ctx, "", file.Base())

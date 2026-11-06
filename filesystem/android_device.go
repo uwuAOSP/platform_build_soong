@@ -284,6 +284,50 @@ var pvmfwRawBinaryDepTag pvmfwRawBinaryDepTagType
 var customPartitionDepTag customPartitionDepTagType
 var fileListCheckDepTag fileListCheckDepTagType
 
+// getRadioModuleProxy resolves either a legacy unqualified radio module name or
+// the namespace-qualified module reference provided by uwuRadio. Qualified
+// references must be matched by both module directory and base name because
+// GetDirectDepProxyWithTag only matches BaseModuleName and can panic when two
+// exported Soong namespaces contain the same partition name.
+func getRadioModuleProxy(ctx android.ModuleContext, name string) android.ModuleProxy {
+	qualified := strings.HasPrefix(name, "//")
+	moduleDir := ""
+	moduleName := name
+	if qualified {
+		var ok bool
+		moduleDir, moduleName, ok = strings.Cut(strings.TrimPrefix(name, "//"), ":")
+		if !ok || moduleDir == "" || moduleName == "" {
+			ctx.ModuleErrorf("invalid qualified radio module reference %q; expected //namespace:module", name)
+			return android.ModuleProxy{}
+		}
+	}
+
+	var matches []android.ModuleProxy
+	ctx.VisitDirectDepsProxy(func(module android.ModuleProxy) {
+		if ctx.OtherModuleDependencyTag(module) != radioDepTag {
+			return
+		}
+		info, ok := android.OtherModuleProvider(ctx, module, android.CommonModuleInfoProvider)
+		if !ok || info.BaseModuleName != moduleName {
+			return
+		}
+		if qualified && ctx.OtherModuleDir(module) != moduleDir {
+			return
+		}
+		matches = append(matches, module)
+	})
+
+	if len(matches) == 1 {
+		return matches[0]
+	}
+	if len(matches) == 0 {
+		ctx.ModuleErrorf("radio module %q is not a direct dependency", name)
+	} else {
+		ctx.ModuleErrorf("radio module %q is ambiguous; use a namespace-qualified //namespace:module reference", name)
+	}
+	return android.ModuleProxy{}
+}
+
 func (a *androidDevice) DepsMutator(ctx android.BottomUpMutatorContext) {
 	addDependencyIfDefined := func(dep *string) {
 		if dep != nil {
@@ -826,15 +870,20 @@ func (a *androidDevice) distFiles(ctx android.ModuleContext) {
 		}
 		// radio
 		if a.deviceProps.Radio_partition_name != nil {
-			radio := ctx.GetDirectDepProxyWithTag(*a.deviceProps.Radio_partition_name, radioDepTag)
-			files := android.OutputFilesForModule(ctx, radio, "")
-			for _, file := range files {
-				// The radio files are disted stanadlone, outside img.zip
-				ctx.DistForGoal("droidcore-unbundled", file)
+			radio := getRadioModuleProxy(ctx, *a.deviceProps.Radio_partition_name)
+			if !radio.IsNil() {
+				files := android.OutputFilesForModule(ctx, radio, "")
+				for _, file := range files {
+					// The radio files are disted stanadlone, outside img.zip
+					ctx.DistForGoal("droidcore-unbundled", file)
+				}
 			}
 		}
 		for _, name := range a.deviceProps.Radio_partition_names {
-			radio := ctx.GetDirectDepProxyWithTag(name, radioDepTag)
+			radio := getRadioModuleProxy(ctx, name)
+			if radio.IsNil() {
+				continue
+			}
 			files := android.OutputFilesForModule(ctx, radio, "")
 			for _, file := range files {
 				// The radio files are disted stanadlone, outside img.zip
@@ -1124,14 +1173,19 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 		}
 	}
 	if a.deviceProps.Radio_partition_name != nil {
-		radio := ctx.GetDirectDepProxyWithTag(*a.deviceProps.Radio_partition_name, radioDepTag)
-		files := android.OutputFilesForModule(ctx, radio, "")
-		builder.Command().
-			Textf("mkdir -p %s/RADIO && cp -t %s/RADIO ", targetFilesDir, targetFilesDir).
-			Inputs(files)
+		radio := getRadioModuleProxy(ctx, *a.deviceProps.Radio_partition_name)
+		if !radio.IsNil() {
+			files := android.OutputFilesForModule(ctx, radio, "")
+			builder.Command().
+				Textf("mkdir -p %s/RADIO && cp -t %s/RADIO ", targetFilesDir, targetFilesDir).
+				Inputs(files)
+		}
 	}
 	for _, name := range a.deviceProps.Radio_partition_names {
-		radio := ctx.GetDirectDepProxyWithTag(name, radioDepTag)
+		radio := getRadioModuleProxy(ctx, name)
+		if radio.IsNil() {
+			continue
+		}
 		files := android.OutputFilesForModule(ctx, radio, "")
 		builder.Command().
 			Textf("mkdir -p %s/RADIO && cp -t %s/RADIO ", targetFilesDir, targetFilesDir).
@@ -2433,7 +2487,10 @@ func (a *androidDevice) checkRadioVersion(ctx android.ModuleContext) android.Wri
 	}
 
 	if a.deviceProps.Radio_partition_name != nil {
-		radio := ctx.GetDirectDepProxyWithTag(*a.deviceProps.Radio_partition_name, radioDepTag)
+		radio := getRadioModuleProxy(ctx, *a.deviceProps.Radio_partition_name)
+		if radio.IsNil() {
+			return checkRadioVersionTimestamp
+		}
 		if radioInfo, ok := android.OtherModuleProvider(ctx, radio, radioInfoProvider); ok {
 			radioImg := radioInfo.image
 			if radioImg != nil {
