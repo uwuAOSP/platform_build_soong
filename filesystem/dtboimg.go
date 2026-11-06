@@ -151,7 +151,8 @@ func (p *prebuiltDtboImg) buildPropFileForMiscInfo(ctx android.ModuleContext) an
 		addStr("avb_dtbo_algorithm", proptools.String(p.properties.Avb_algorithm))
 	}
 	if p.properties.Avb_private_key != nil {
-		addStr("avb_dtbo_key_path", proptools.String(p.properties.Avb_private_key))
+		key := android.PathForModuleSrc(ctx, proptools.String(p.properties.Avb_private_key))
+		addStr("avb_dtbo_key_path", key.String())
 	}
 	if p.properties.Avb_rollback_index_location != nil {
 		addStr("avb_dtbo_rollback_index_location", strconv.FormatInt(*p.properties.Avb_rollback_index_location, 10))
