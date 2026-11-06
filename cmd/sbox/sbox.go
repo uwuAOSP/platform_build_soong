@@ -30,6 +30,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"android/soong/cmd/sbox/sbox_proto"
@@ -719,9 +720,9 @@ func applyPathMappings(pathMappings []*sbox_proto.PathMapping, path string) stri
 	return path
 }
 
-// moveFiles moves files specified by a set of copy rules.  It uses os.Rename, so it is restricted
-// to moving files where the source and destination are in the same filesystem.  This is OK for
-// sbox because the temporary directory is inside the out directory.  If write is onlyWriteIfChanged
+// moveFiles moves files specified by a set of copy rules. It uses os.Rename when possible,
+// falling back to copying and removing the source when output directories span filesystems.
+// If write is onlyWriteIfChanged
 // then the output file is compared to the input file and not written to if it is the same, avoiding
 // updating the timestamp.  Otherwise it always updates the timestamp of the new file.
 func moveFiles(copies []*sbox_proto.Copy, fromDir, toDir string, write writeType) error {
@@ -738,6 +739,12 @@ func moveFiles(copies []*sbox_proto.Copy, fromDir, toDir string, write writeType
 		}
 
 		err = os.Rename(fromPath, toPath)
+		if errors.Is(err, syscall.EXDEV) {
+			if err := copyOneFile(fromPath, toPath, false, requireFromExists, alwaysWrite); err != nil {
+				return fmt.Errorf("error copying %q to %q across filesystems: %w", fromPath, toPath, err)
+			}
+			err = os.Remove(fromPath)
+		}
 		if err != nil {
 			return err
 		}
