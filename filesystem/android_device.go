@@ -378,6 +378,15 @@ func (a *androidDevice) addDepsForTargetFilesMetadata(ctx android.BottomUpMutato
 	ctx.AddFarVariationDependencies(ctx.Config().AndroidCommonTarget.Variations(), fileContextsDepTag, "file_contexts_bin_gen")
 }
 
+func (a *androidDevice) radioOutputFiles(ctx android.ModuleContext) android.Paths {
+	var files android.Paths
+	// Dependency names may be namespace-qualified, while proxies expose bare module names.
+	ctx.VisitDirectDepsProxyWithTag(radioDepTag, func(radio android.ModuleProxy) {
+		files = append(files, android.OutputFilesForModule(ctx, radio, "")...)
+	})
+	return android.FirstUniquePaths(files)
+}
+
 func (a *androidDevice) UseGenericConfig() bool {
 	return false
 }
@@ -824,22 +833,9 @@ func (a *androidDevice) distFiles(ctx android.ModuleContext) {
 		if a.jacocoZip != nil {
 			ctx.DistForGoal("dist_files", a.jacocoZip)
 		}
-		// radio
-		if a.deviceProps.Radio_partition_name != nil {
-			radio := ctx.GetDirectDepProxyWithTag(*a.deviceProps.Radio_partition_name, radioDepTag)
-			files := android.OutputFilesForModule(ctx, radio, "")
-			for _, file := range files {
-				// The radio files are disted stanadlone, outside img.zip
-				ctx.DistForGoal("droidcore-unbundled", file)
-			}
-		}
-		for _, name := range a.deviceProps.Radio_partition_names {
-			radio := ctx.GetDirectDepProxyWithTag(name, radioDepTag)
-			files := android.OutputFilesForModule(ctx, radio, "")
-			for _, file := range files {
-				// The radio files are disted stanadlone, outside img.zip
-				ctx.DistForGoal("droidcore-unbundled", file)
-			}
+		// Radio files are distributed separately from img.zip.
+		for _, file := range a.radioOutputFiles(ctx) {
+			ctx.DistForGoal("droidcore-unbundled", file)
 		}
 		// bootloader
 		if a.deviceProps.Bootloader != nil {
@@ -1123,16 +1119,7 @@ func (a *androidDevice) buildTargetFilesZip(ctx android.ModuleContext, allInstal
 				Input(bootImgInfo.Kernel).Textf(" %s/PREBUILT_IMAGES/kernel_16k", targetFilesDir)
 		}
 	}
-	if a.deviceProps.Radio_partition_name != nil {
-		radio := ctx.GetDirectDepProxyWithTag(*a.deviceProps.Radio_partition_name, radioDepTag)
-		files := android.OutputFilesForModule(ctx, radio, "")
-		builder.Command().
-			Textf("mkdir -p %s/RADIO && cp -t %s/RADIO ", targetFilesDir, targetFilesDir).
-			Inputs(files)
-	}
-	for _, name := range a.deviceProps.Radio_partition_names {
-		radio := ctx.GetDirectDepProxyWithTag(name, radioDepTag)
-		files := android.OutputFilesForModule(ctx, radio, "")
+	if files := a.radioOutputFiles(ctx); len(files) > 0 {
 		builder.Command().
 			Textf("mkdir -p %s/RADIO && cp -t %s/RADIO ", targetFilesDir, targetFilesDir).
 			Inputs(files)
